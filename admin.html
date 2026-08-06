@@ -1,0 +1,1681 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ClassyBattle — Admin</title>
+<style>
+:root{
+  --bg1:#f4f6f9; --bg2:#e9edf3;
+  --glass:rgba(255,255,255,0.55); --glass-strong:rgba(255,255,255,0.75);
+  --border:rgba(255,255,255,0.6); --border-soft:rgba(20,20,30,0.08);
+  --text:#14161a; --sub:#6a7180; --sub2:#9aa1ae;
+  --accent:#2f6fed; --accent2:#00c896; --danger:#e5484d; --warn:#e29a1c;
+  --shadow:0 8px 32px rgba(31,41,55,0.10), 0 2px 8px rgba(31,41,55,0.06);
+  --shadow-lg:0 20px 60px rgba(31,41,55,0.16), 0 4px 16px rgba(31,41,55,0.08);
+  --radius:18px; --radius-sm:12px;
+  --sans:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+}
+*{box-sizing:border-box;}
+body{
+  margin:0;color:var(--text);font-family:var(--sans);font-size:14px;
+  background:
+    radial-gradient(900px 500px at 10% -10%, rgba(47,111,237,0.10), transparent 60%),
+    radial-gradient(900px 500px at 100% 0%, rgba(0,200,150,0.08), transparent 60%),
+    linear-gradient(180deg, var(--bg1), var(--bg2));
+  min-height:100vh;
+}
+::-webkit-scrollbar{width:9px;height:9px;}
+::-webkit-scrollbar-thumb{background:rgba(20,20,30,0.15);border-radius:5px;}
+
+.glass{
+  background:var(--glass);
+  backdrop-filter:blur(22px) saturate(160%);
+  -webkit-backdrop-filter:blur(22px) saturate(160%);
+  border:1px solid var(--border);
+  box-shadow:var(--shadow);
+  border-radius:var(--radius);
+}
+
+/* ---------- LOGIN ---------- */
+#loginScreen{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:100;}
+.loginCard{width:400px;padding:38px 36px;text-align:center;}
+.loginCard .mark{width:52px;height:52px;margin:0 auto 18px;border-radius:16px;
+  background:linear-gradient(135deg,var(--accent),var(--accent2));
+  display:flex;align-items:center;justify-content:center;font-weight:800;color:#fff;font-size:20px;
+  box-shadow:0 10px 30px rgba(47,111,237,0.35);}
+.loginCard h1{font-size:20px;margin:0;font-weight:700;letter-spacing:-.2px;}
+.loginCard p.sub{color:var(--sub);margin:6px 0 26px;font-size:13px;}
+.field{margin-bottom:14px;text-align:left;}
+.field label{display:block;font-size:12px;font-weight:600;color:var(--sub);margin-bottom:6px;}
+.field input,.field select,.field textarea{
+  width:100%;background:rgba(255,255,255,0.7);border:1px solid var(--border-soft);color:var(--text);
+  padding:12px 14px;border-radius:var(--radius-sm);font-family:var(--sans);font-size:14px;outline:none;
+  transition:border-color .15s, box-shadow .15s;
+}
+.field textarea{resize:vertical;min-height:70px;}
+.field input:focus,.field select:focus,.field textarea:focus{border-color:var(--accent);box-shadow:0 0 0 4px rgba(47,111,237,0.12);}
+.searchInput{
+  background:rgba(255,255,255,0.7);border:1px solid var(--border-soft);color:var(--text);
+  padding:12px 14px;border-radius:var(--radius-sm);font-family:var(--sans);font-size:14px;outline:none;
+  transition:border-color .15s, box-shadow .15s;
+}
+.searchInput:focus{border-color:var(--accent);box-shadow:0 0 0 4px rgba(47,111,237,0.12);}
+.btn{cursor:pointer;border:none;border-radius:var(--radius-sm);padding:11px 18px;font-weight:600;font-size:13.5px;font-family:var(--sans);transition:filter .15s, transform .05s, box-shadow .15s;}
+.btn:active{transform:scale(.98);}
+.btn-primary{background:linear-gradient(135deg,var(--accent),#1c56d6);color:#fff;width:100%;box-shadow:0 8px 20px rgba(47,111,237,0.30);}
+.btn-primary:hover{filter:brightness(1.06);}
+.btn-ghost{background:rgba(255,255,255,0.6);border:1px solid var(--border-soft);color:var(--text);}
+.btn-ghost:hover{border-color:var(--accent);color:var(--accent);}
+.btn-danger{background:rgba(229,72,77,0.10);border:1px solid rgba(229,72,77,0.25);color:var(--danger);}
+.btn-danger:hover{background:rgba(229,72,77,0.16);}
+.btn-sm{padding:6px 12px;font-size:12.5px;border-radius:9px;}
+.loginErr{color:var(--danger);font-size:12.5px;margin-top:12px;min-height:16px;}
+
+/* ---------- SHELL ---------- */
+#app{display:none;height:100vh;padding:14px;gap:14px;}
+#app.active{display:flex;}
+#sidebar{width:236px;flex-shrink:0;display:flex;flex-direction:column;padding:16px 12px;}
+#sidebar .brand{display:flex;align-items:center;gap:10px;padding:6px 8px 18px;border-bottom:1px solid var(--border-soft);margin-bottom:10px;}
+#sidebar .brand .mk{width:32px;height:32px;border-radius:10px;background:linear-gradient(135deg,var(--accent),var(--accent2));display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:13px;flex-shrink:0;}
+#sidebar .brand b{font-size:14px;letter-spacing:-.2px;}
+#sidebar .brand span{display:block;font-size:10.5px;color:var(--sub2);}
+#navList{flex:1;overflow-y:auto;}
+.navGroupLabel{font-size:10px;text-transform:uppercase;letter-spacing:.8px;color:var(--sub2);padding:14px 10px 6px;font-weight:700;}
+.navItem{display:flex;align-items:center;gap:10px;padding:9px 11px;border-radius:11px;cursor:pointer;color:var(--sub);font-size:13.5px;margin-bottom:2px;font-weight:500;transition:background .12s,color .12s;}
+.navItem:hover{background:rgba(47,111,237,0.08);color:var(--text);}
+.navItem.active{background:linear-gradient(135deg,rgba(47,111,237,0.14),rgba(0,200,150,0.10));color:var(--accent);font-weight:700;}
+.navItem .ic{width:18px;text-align:center;font-size:14px;flex-shrink:0;}
+#sidebar .foot{padding-top:12px;border-top:1px solid var(--border-soft);}
+#sidebar .foot .who{font-size:12.5px;font-weight:600;margin-bottom:10px;padding:0 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+
+#main{flex:1;display:flex;flex-direction:column;overflow:hidden;gap:14px;}
+#topbar{height:58px;flex-shrink:0;display:flex;align-items:center;padding:0 22px;justify-content:space-between;}
+#topbar h2{font-size:17px;margin:0;font-weight:800;letter-spacing:-.3px;}
+#topbar .sub{font-size:12px;color:var(--sub);margin-top:1px;}
+#content{flex:1;overflow-y:auto;padding-right:2px;}
+#content > .pane{padding:22px;margin-bottom:16px;}
+
+.grid{display:grid;gap:14px;}
+.grid-4{grid-template-columns:repeat(4,1fr);}
+.grid-3{grid-template-columns:repeat(3,1fr);}
+.grid-2{grid-template-columns:repeat(2,1fr);}
+@media(max-width:1100px){.grid-4{grid-template-columns:repeat(2,1fr);}.grid-3{grid-template-columns:repeat(2,1fr);}}
+
+.statCard{padding:20px;}
+.statCard .lbl{color:var(--sub);font-size:12px;font-weight:600;}
+.statCard .val{font-size:28px;font-weight:800;margin-top:10px;letter-spacing:-.5px;}
+.statCard .val.accent{color:var(--accent);}
+.statCard .val.warn{color:var(--warn);}
+.statCard .val.danger{color:var(--danger);}
+.statCard .val.ok{color:var(--accent2);}
+
+.sectionHead{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px;}
+.sectionHead h3{margin:0;font-size:16px;font-weight:800;letter-spacing:-.2px;}
+.sectionHead .desc{color:var(--sub);font-size:12.5px;margin-top:3px;}
+
+.actionsBar{display:flex;gap:10px;align-items:center;margin-top:16px;flex-wrap:wrap;}
+.formGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px;margin-bottom:6px;}
+.hint{font-size:12px;color:var(--sub2);margin-top:5px;}
+
+/* tables */
+.tableWrap{overflow-x:auto;border-radius:14px;border:1px solid var(--border-soft);}
+table.dataTable{width:100%;border-collapse:collapse;font-size:13px;}
+table.dataTable thead th{text-align:left;padding:11px 14px;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--sub);background:rgba(255,255,255,0.55);border-bottom:1px solid var(--border-soft);white-space:nowrap;}
+table.dataTable tbody td{padding:12px 14px;border-bottom:1px solid var(--border-soft);color:var(--text);vertical-align:top;}
+table.dataTable tbody tr:hover{background:rgba(47,111,237,0.04);}
+table.dataTable tbody tr:last-child td{border-bottom:none;}
+.cellMuted{color:var(--sub2);}
+.tblToolbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:10px;flex-wrap:wrap;}
+.pager{display:flex;gap:8px;align-items:center;margin-top:14px;justify-content:flex-end;}
+.pager span{font-size:12.5px;color:var(--sub);}
+
+.badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;}
+.badge.ok{background:rgba(0,200,150,0.14);color:#00805f;}
+.badge.warn{background:rgba(226,154,28,0.15);color:#a56a00;}
+.badge.danger{background:rgba(229,72,77,0.13);color:var(--danger);}
+.badge.info{background:rgba(47,111,237,0.12);color:var(--accent);}
+.badge.gray{background:rgba(20,20,30,0.07);color:var(--sub);}
+
+.empty{color:var(--sub2);font-size:13px;text-align:center;padding:40px 0;}
+.loadingRow{display:flex;align-items:center;gap:10px;color:var(--sub);font-size:13px;padding:30px 0;justify-content:center;}
+.spinner{width:15px;height:15px;border:2px solid rgba(47,111,237,0.2);border-top-color:var(--accent);border-radius:50%;animation:spin .6s linear infinite;display:inline-block;}
+@keyframes spin{to{transform:rotate(360deg);}}
+
+.banner{padding:12px 16px;border-radius:12px;font-size:13px;font-weight:600;margin-bottom:14px;display:flex;align-items:center;gap:10px;}
+.banner.ok{background:rgba(0,200,150,0.10);color:#00805f;border:1px solid rgba(0,200,150,0.25);}
+.banner.err{background:rgba(229,72,77,0.10);color:var(--danger);border:1px solid rgba(229,72,77,0.25);}
+
+/* modal */
+#modalOverlay{position:fixed;inset:0;background:rgba(20,25,35,0.35);backdrop-filter:blur(4px);display:none;align-items:center;justify-content:center;z-index:200;padding:20px;}
+#modalOverlay.active{display:flex;}
+.modalCard{width:520px;max-width:100%;max-height:85vh;overflow-y:auto;padding:26px;}
+.modalCard.wide{width:920px;}
+.profileTabs{display:flex;gap:6px;flex-wrap:nowrap;overflow-x:auto;border-bottom:1px solid var(--border-soft);margin-bottom:16px;padding-bottom:10px;scrollbar-width:thin;}
+.profileTabs button{border:none;background:transparent;color:var(--sub);font-size:12.5px;font-weight:700;padding:7px 14px;border-radius:20px;cursor:pointer;white-space:nowrap;flex:none;transition:background .15s,color .15s;}
+.profileTabs button:hover{background:rgba(255,255,255,0.06);}
+.profileTabs button.active{background:var(--accent);color:#fff;}
+.profileTopRow{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;margin-bottom:18px;flex-wrap:wrap;}
+.profileAvatar{width:52px;height:52px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--accent2,#2ecc71));display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:800;color:#fff;flex:none;}
+.profileIdent{display:flex;gap:14px;align-items:center;}
+.profileIdent .pname{font-size:17px;font-weight:800;line-height:1.3;}
+.profileIdent .pmeta{font-size:12px;color:var(--sub);margin-top:3px;display:flex;gap:8px;flex-wrap:wrap;}
+.profileStats{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:16px;}
+@media(max-width:820px){.profileStats{grid-template-columns:repeat(3,1fr);}}
+@media(max-width:520px){.profileStats{grid-template-columns:repeat(2,1fr);}}
+.pStatCard{border:1px solid var(--border-soft);border-radius:12px;padding:12px 14px;background:rgba(255,255,255,0.02);}
+.pStatCard .lbl{font-size:10.5px;color:var(--sub2);font-weight:700;text-transform:uppercase;letter-spacing:.04em;}
+.pStatCard .val{font-size:16px;font-weight:800;margin-top:5px;}
+.profileActionsBar{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:18px;padding-bottom:18px;border-bottom:1px solid var(--border-soft);}
+.profilePane{min-height:120px;}
+.profilePane .tableWrap{max-height:360px;overflow-y:auto;}
+.pillNote{font-size:11px;color:var(--sub2);}
+.miniActions{display:flex;gap:6px;flex-wrap:wrap;}
+.miniActions button{font-size:11px;padding:5px 9px;border-radius:8px;}
+
+/* ---- Toasts ---- */
+#toastContainer{position:fixed;top:20px;right:20px;z-index:400;display:flex;flex-direction:column;gap:10px;max-width:360px;}
+.toast{display:flex;align-items:flex-start;gap:10px;padding:13px 16px;border-radius:12px;background:rgba(24,28,38,0.96);border:1px solid var(--border-soft);box-shadow:0 8px 24px rgba(0,0,0,0.35);backdrop-filter:blur(6px);color:#fff;font-size:13px;font-weight:600;line-height:1.4;transform:translateX(120%);opacity:0;transition:transform .28s ease,opacity .28s ease;}
+.toast.show{transform:translateX(0);opacity:1;}
+.toast.hide{transform:translateX(120%);opacity:0;}
+.toast .ticon{flex:none;width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:900;}
+.toast.ok .ticon{background:rgba(46,204,113,0.18);color:#2ecc71;}
+.toast.err .ticon{background:rgba(231,76,60,0.18);color:#e74c3c;}
+.toast.info .ticon{background:rgba(47,111,237,0.18);color:#2f6fed;}
+.toast .tbody{flex:1;}
+.toast .tclose{flex:none;cursor:pointer;color:var(--sub2);font-size:13px;opacity:.7;}
+.toast .tclose:hover{opacity:1;}
+
+/* ---- Styled prompt (replaces window.prompt) ---- */
+#promptOverlay{position:fixed;inset:0;background:rgba(20,25,35,0.45);backdrop-filter:blur(4px);display:none;align-items:center;justify-content:center;z-index:300;padding:20px;}
+#promptOverlay.active{display:flex;}
+#promptCard{padding:22px;}
+#promptCard h3{margin:0 0 4px;font-size:15px;font-weight:800;}
+#promptCard .pdesc{font-size:12.5px;color:var(--sub);margin-bottom:14px;}
+#promptCard .field{margin-bottom:12px;}
+#promptCard .perr{font-size:12px;color:#e74c3c;font-weight:600;margin-top:8px;min-height:16px;}
+.modalCard .mhead{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px;}
+.modalCard h3{margin:0;font-size:16px;font-weight:800;}
+.modalCard .mdesc{font-size:12.5px;color:var(--sub);margin-top:4px;}
+.closeX{cursor:pointer;width:30px;height:30px;border-radius:9px;display:flex;align-items:center;justify-content:center;color:var(--sub);font-size:16px;background:rgba(20,20,30,0.05);flex-shrink:0;}
+.closeX:hover{background:rgba(229,72,77,0.10);color:var(--danger);}
+
+.rowActions{display:flex;gap:6px;flex-wrap:wrap;}
+.kvGrid{display:grid;grid-template-columns:auto 1fr;gap:8px 14px;font-size:13px;}
+.kvGrid dt{color:var(--sub);font-weight:600;}
+.kvGrid dd{margin:0;}
+</style>
+</head>
+<body>
+
+<!-- ================= LOGIN ================= -->
+<div id="loginScreen">
+  <div class="loginCard glass">
+    <div class="mark">CB</div>
+    <h1>ClassyBattle</h1>
+    <p class="sub">Sign in to the Admin Panel</p>
+    <div class="field">
+      <label>Email</label>
+      <input id="loginEmail" type="text" placeholder="you@classybattle.com" autocomplete="username">
+    </div>
+    <div class="field">
+      <label>Password</label>
+      <input id="loginPassword" type="password" placeholder="••••••••" autocomplete="current-password">
+    </div>
+    <button class="btn btn-primary" onclick="doLogin()" id="loginBtn">Sign In</button>
+    <div class="loginErr" id="loginErr"></div>
+  </div>
+</div>
+
+<!-- ================= APP SHELL ================= -->
+<div id="app">
+  <div id="sidebar" class="glass">
+    <div class="brand"><div class="mk">CB</div><div><b>ClassyBattle</b><span>Admin Panel</span></div></div>
+    <div id="navList"></div>
+    <div class="foot">
+      <div class="who" id="whoami">—</div>
+      <button class="btn btn-danger btn-sm" style="width:100%" onclick="doLogout()">Log out</button>
+    </div>
+  </div>
+  <div id="main">
+    <div id="topbar" class="glass">
+      <div><h2 id="pageTitle">Dashboard</h2><div class="sub" id="pageSub">Overview of your platform</div></div>
+    </div>
+    <div id="content"></div>
+  </div>
+</div>
+
+<!-- ================= MODAL ================= -->
+<div id="modalOverlay" onclick="if(event.target===this)closeModal()">
+  <div class="modalCard glass" id="modalCard"></div>
+</div>
+
+<!-- ================= PROMPT (styled replacement for window.prompt) ================= -->
+<div id="promptOverlay" onclick="if(event.target===this)closePrompt(null)">
+  <div class="modalCard glass" id="promptCard" style="width:400px;"></div>
+</div>
+
+<!-- ================= TOASTS ================= -->
+<div id="toastContainer"></div>
+
+<script>
+/* ============================================================
+   CONFIG / STATE
+============================================================ */
+const API_BASE = 'https://classybattle.onrender.com/api/v1'; // fixed, not user-editable
+
+const State = {
+  accessToken: localStorage.getItem('cb_access_token') || '',
+  refreshToken: localStorage.getItem('cb_refresh_token') || '',
+  userEmail: localStorage.getItem('cb_user_email') || '',
+  section: 'dashboard',
+};
+
+/* ============================================================
+   CORE API CALLER (internal only — never shown to the user)
+============================================================ */
+async function apiCall(method, path, {query={}, body=null, auth=true} = {}){
+  let url = API_BASE + path;
+  const qs = Object.entries(query).filter(([k,v])=>v!==''&&v!=null).map(([k,v])=>`${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&');
+  if(qs) url += (url.includes('?')?'&':'?') + qs;
+
+  const headers = {'Content-Type':'application/json'};
+  if(auth && State.accessToken) headers['Authorization'] = 'Bearer ' + State.accessToken;
+
+  const opts = {method, headers};
+  if(body!=null && method!=='GET') opts.body = JSON.stringify(body);
+
+  let res, data, text;
+  try{
+    res = await fetch(url, opts);
+    text = await res.text();
+    try{ data = text ? JSON.parse(text) : {}; }catch(e){ data = {raw:text}; }
+  }catch(networkErr){
+    return {ok:false, status:0, data:{message:'Could not reach the server. Check your connection.'}};
+  }
+
+  if(res.status===401 && State.refreshToken && auth && !path.includes('/auth/')){
+    const refreshed = await tryRefresh();
+    if(refreshed){
+      headers['Authorization'] = 'Bearer ' + State.accessToken;
+      res = await fetch(url, opts);
+      text = await res.text();
+      try{ data = text ? JSON.parse(text) : {}; }catch(e){ data = {raw:text}; }
+    }
+  }
+  return {ok:res.ok, status:res.status, data};
+}
+async function tryRefresh(){
+  try{
+    const r = await fetch(API_BASE+'/auth/token/refresh', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({refresh_token: State.refreshToken})
+    });
+    if(!r.ok) return false;
+    const d = await r.json();
+    const newAccess = d.access_token || d.data?.access_token;
+    if(newAccess){ State.accessToken = newAccess; localStorage.setItem('cb_access_token', newAccess); return true; }
+    return false;
+  }catch(e){ return false; }
+}
+function friendlyError(data, status){
+  if(!status) return 'Could not reach the server.';
+  return (data && (data.message || data.detail || (data.error && data.error.message) || data.error)) || `Something went wrong (code ${status}).`;
+}
+
+/* ============================================================
+   AUTH
+============================================================ */
+async function doLogin(){
+  const identifier = document.getElementById('loginEmail').value.trim();
+  const password = document.getElementById('loginPassword').value;
+  const err = document.getElementById('loginErr');
+  const btn = document.getElementById('loginBtn');
+  err.textContent='';
+  if(!identifier || !password){ err.textContent='Please enter your email and password.'; return; }
+  btn.disabled = true; btn.textContent = 'Signing in…';
+  const r = await apiCall('POST','/auth/login',{auth:false, body:{email: identifier, identifier, password}});
+  btn.disabled = false; btn.textContent = 'Sign In';
+  if(r.ok){
+    const d = r.data.data || r.data;
+    const access = d.access_token || d.accessToken;
+    const refresh = d.refresh_token || d.refreshToken;
+    if(!access){ err.textContent='Signed in, but no session token was returned. Please contact the developer.'; return; }
+    State.accessToken = access; State.refreshToken = refresh || '';
+    State.userEmail = identifier;
+    localStorage.setItem('cb_access_token', access);
+    localStorage.setItem('cb_refresh_token', refresh||'');
+    localStorage.setItem('cb_user_email', identifier);
+    enterApp();
+  } else {
+    err.textContent = friendlyError(r.data, r.status);
+  }
+}
+function doLogout(){
+  localStorage.removeItem('cb_access_token');
+  localStorage.removeItem('cb_refresh_token');
+  localStorage.removeItem('cb_user_email');
+  State.accessToken=''; State.refreshToken='';
+  document.getElementById('app').classList.remove('active');
+  document.getElementById('loginScreen').style.display='flex';
+}
+function enterApp(){
+  document.getElementById('loginScreen').style.display='none';
+  document.getElementById('app').classList.add('active');
+  document.getElementById('whoami').textContent = State.userEmail || 'Admin';
+  buildNav();
+  goSection('dashboard');
+}
+// NOTE: the auto-login-on-load call (`if(State.accessToken){ enterApp(); }`)
+// used to live here, but enterApp() -> buildNav() reads the MODULES
+// const declared further below in this file. Calling it here ran into
+// the "temporal dead zone" — accessing a `const` before its declaration
+// line executes — and threw "Cannot access 'MODULES' before
+// initialization", crashing the whole script on every reload where a
+// token was already in localStorage (i.e. every returning admin saw a
+// blank page with no sidebar/options after refreshing). Moved to the
+// bottom of the script, after MODULES is defined, to fix this.
+
+/* ============================================================
+   MODULE REGISTRY — business areas, each with a table + friendly actions
+============================================================ */
+function col(key, label, fmt){ return {key, label, fmt}; }
+const money = v => v==null ? '—' : `₹${Number(v).toLocaleString('en-IN')}`;
+const dt = v => v ? new Date(v).toLocaleString('en-IN',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit',timeZone:'Asia/Kolkata'}) + ' IST' : '—';
+const statusBadge = v => {
+  if(v==null) return '<span class="badge gray">—</span>';
+  const s = String(v).toLowerCase();
+  let cls='gray';
+  if(['active','approved','completed','success','verified','online','paid','won','ok'].some(x=>s.includes(x))) cls='ok';
+  else if(['pending','review','processing','scheduled','hold','in_progress'].some(x=>s.includes(x))) cls='warn';
+  else if(['rejected','failed','banned','cancelled','canceled','locked','suspended','frozen'].some(x=>s.includes(x))) cls='danger';
+  else cls='info';
+  return `<span class="badge ${cls}">${v}</span>`;
+};
+
+const MODULES = [
+  { key:'dashboard', label:'Dashboard', icon:'▤', group:'Overview' },
+
+  { key:'users', label:'Users', icon:'◈', group:'People', desc:'All registered players',
+    list:{ path:'/admin/users', query:['search'], searchPlaceholder:'Search by name or email…',
+      columns:[col('id','ID'),col('full_name','Name'),col('email','Email'),col('phone_number','Phone'),col('player_uid','Player UID'),col('status','Status',statusBadge),col('created_at','Joined',dt)] },
+    rowActions:[
+      {label:'View Profile', custom:'openUserProfileModal'},
+    ]
+  },
+
+  { key:'security', label:'Security', icon:'◇', group:'People', desc:'Login activity, risk & account locks',
+    list:{ path:'/admin/security/locked-accounts', columns:[col('id','ID'),col('user_id','User ID'),col('reason','Reason'),col('locked_at','Locked At',dt)] },
+    extraLists:[
+      {label:'Login History', path:'/admin/security/login-history', columns:[col('user_id','User'),col('ip_address','IP'),col('success','Result',v=>v?'<span class="badge ok">Success</span>':'<span class="badge danger">Failed</span>'),col('created_at','Time',dt)]},
+      {label:'Security Events', path:'/admin/security/events', columns:[col('event_type','Event'),col('severity','Severity',statusBadge),col('description','Description'),col('created_at','Time',dt)]},
+    ],
+    actions:[
+      {label:'Unlock an Account', method:'POST', path:'/admin/security/accounts/:user_id/unlock', fields:[{name:'user_id',label:'User ID',required:true},{name:'reason',label:'Reason'}]},
+    ]
+  },
+
+  { key:'anticheat', label:'Anti-Cheat', icon:'⛨', group:'Moderation', desc:'Fraud flags & scans',
+    list:{ path:'/admin/anti-cheat/flags', columns:[col('id','ID'),col('user_id','User'),col('match_id','Match'),col('reason','Reason'),col('status','Status',statusBadge),col('created_at','Flagged',dt)] },
+    rowActions:[
+      {label:'Review', kind:'confirm', method:'PATCH', path:'/admin/anti-cheat/flags/:id/review', idField:'id', body:[{name:'action',label:'Action',type:'select',options:['approve','dismiss','ban']},{name:'notes',label:'Notes'}]},
+    ],
+    actions:[
+      {label:'Run a Scan', method:'POST', path:'/admin/anti-cheat/scan', fields:[{name:'user_id',label:'User ID'},{name:'match_id',label:'Match ID'}]},
+    ]
+  },
+
+  { key:'moderation', label:'Reports & Appeals', icon:'☓', group:'Moderation', desc:'User reports, moderation actions, appeals',
+    list:{ path:'/admin/reports', columns:[col('id','ID'),col('reported_user_id','Reported User'),col('reason','Reason'),col('status','Status',statusBadge),col('created_at','Filed',dt)] },
+    extraLists:[
+      {label:'Moderation Actions', path:'/admin/moderation-actions', columns:[col('id','ID'),col('user_id','User'),col('action_type','Action'),col('reason','Reason'),col('created_at','Date',dt)]},
+      {label:'Appeals', path:'/admin/appeals', columns:[col('id','ID'),col('user_id','User'),col('status','Status',statusBadge),col('created_at','Filed',dt)]},
+    ],
+    rowActions:[
+      {label:'Review', kind:'confirm', method:'PATCH', path:'/admin/reports/:id/review', idField:'id', body:[{name:'status',label:'Decision',type:'select',options:['resolved','dismissed','escalated']},{name:'resolution_note',label:'Note'}]},
+    ],
+    actions:[
+      {label:'Take Moderation Action', method:'POST', path:'/admin/moderation-actions', fields:[{name:'user_id',label:'User ID',required:true},{name:'action_type',label:'Action Type',type:'select',options:['warning','mute','suspend','ban']},{name:'reason',label:'Reason',required:true},{name:'duration_hours',label:'Duration (hours)',type:'number'}]},
+    ]
+  },
+
+  { key:'games', label:'Games', icon:'🎮', group:'Catalog', desc:'Add and manage games — do this first, then create a Match Schedule for the game',
+    list:{ path:'/games', columns:[col('id','Game ID'), col('name','Name'), col('slug','Slug'), col('icon_url','Icon URL'), col('is_active','Active',statusBadge)] },
+    actions:[{label:'Add Game', method:'POST', path:'/games', fields:[
+      {name:'name',label:'Name',required:true},
+      {name:'icon_url',label:'Icon URL'},
+      {name:'is_active',label:'Active',type:'select',options:['true','false']},
+    ]}],
+    rowActions:[
+      {label:'Edit Game', kind:'confirm', method:'PATCH', path:'/games/:id', idField:'id', body:[
+        {name:'name',label:'Name'},
+        {name:'icon_url',label:'Icon URL'},
+        {name:'is_active',label:'Active',type:'select',options:['true','false']},
+      ]},
+    ]
+  },
+
+  { key:'schedules', label:'Match Schedules', icon:'⏱', group:'Catalog', desc:'Pick a game + first/last match time + interval — matches auto-generate every day automatically after this one-time setup',
+    list:{ path:'/schedules', query:['game_id'], columns:[
+      col('id','Schedule ID'), col('game_id','Game ID'), col('category','Category',statusBadge),
+      col('daily_slot_times','Times/Day', v=>Array.isArray(v)?`${v.length} slots/day`:'—'),
+      col('entry_fee','Entry Fee',money), col('prize_pool','Prize Pool',money),
+      col('max_players','Max/Slot'), col('last_generated_on','Last Generated',dt),
+    ]},
+    actions:[{label:'Create Schedule', custom:'openCreateScheduleModal'}],
+    rowActions:[
+      {label:'Edit Schedule', custom:'openEditScheduleModal'},
+      {label:"Generate Today's Slots Now", kind:'confirm', method:'POST', path:'/schedules/:id/generate-slots', idField:'id', body:[]},
+    ]
+  },
+
+  { key:'teams', label:'Teams', icon:'⛊', group:'Catalog', desc:'Look up and manage a team by ID',
+    lookupOnly:true,
+    actions:[
+      {label:'Look Up a Team', method:'GET', path:'/teams/:team_id', fields:[{name:'team_id',label:'Team ID',required:true}], resultAsCard:true},
+      {label:'Update Team', method:'PATCH', path:'/teams/:team_id', fields:[{name:'team_id',label:'Team ID',required:true},{name:'name',label:'New Name'},{name:'tag',label:'New Tag'}]},
+      {label:'Lock / Unlock Team', method:'PATCH', path:'/teams/:team_id/lock', fields:[{name:'team_id',label:'Team ID',required:true},{name:'is_locked',label:'Locked',type:'select',options:['true','false']}]},
+      {label:'Remove a Member', method:'POST', path:'/teams/:team_id/members/remove', fields:[{name:'team_id',label:'Team ID',required:true},{name:'user_id',label:'User ID',required:true}]},
+    ]
+  },
+
+  { key:'matches', label:'Tournaments / Matches', icon:'⚔', group:'Operations', desc:'A tournament IS the match now — browse, publish rooms, and manage players/results all in one place',
+    customRender:true,
+  },
+
+  { key:'results', label:'Tournament Results', icon:'✓', group:'Operations', desc:'Look up a tournament by ID to review, verify, approve, or reject its submitted result',
+    lookupOnly:true,
+    actions:[
+      {label:'Get Result', method:'GET', path:'/tournaments/:tournament_id/result', fields:[{name:'tournament_id',label:'Tournament ID',required:true}], resultAsCard:true},
+      {label:'Verify Result', method:'POST', path:'/tournaments/:tournament_id/result/verify', fields:[{name:'tournament_id',label:'Tournament ID',required:true}]},
+      {label:'Approve Result', method:'POST', path:'/tournaments/:tournament_id/result/approve', fields:[{name:'tournament_id',label:'Tournament ID',required:true}]},
+      {label:'Reject Result', method:'POST', path:'/tournaments/:tournament_id/result/reject', fields:[{name:'tournament_id',label:'Tournament ID',required:true},{name:'reason',label:'Reason',required:true}]},
+    ]
+  },
+
+  { key:'prize', label:'Prizes & Payouts', icon:'♦', group:'Finance', desc:'Prize pools and payouts',
+    list:{ path:'/admin/prize-pools', columns:[col('id','ID'),col('tournament_id','Tournament'),col('total_amount','Total Pool',money),col('status','Status',statusBadge)] },
+    extraLists:[{label:'Payouts', path:'/admin/prize-payouts', query:['status'], columns:[col('id','ID'),col('user_id','User'),col('tournament_id','Tournament'),col('amount','Amount',money),col('status','Status',statusBadge)]}],
+  },
+
+  { key:'wallet', label:'Wallets', icon:'$', group:'Finance', desc:'User wallet balances & adjustments',
+    list:{ path:'/admin/wallets/transactions', columns:[col('id','ID'),col('user_id','User'),col('amount','Amount',money),col('type','Type',statusBadge),col('created_at','Date',dt)] },
+    actions:[
+      {label:'Credit Wallet', method:'POST', path:'/admin/wallets/:user_id/credit', fields:[{name:'user_id',label:'User ID',required:true},{name:'amount',label:'Amount',type:'number',required:true},{name:'reason',label:'Reason',required:true}]},
+      {label:'Debit Wallet', method:'POST', path:'/admin/wallets/:user_id/debit', fields:[{name:'user_id',label:'User ID',required:true},{name:'amount',label:'Amount',type:'number',required:true},{name:'reason',label:'Reason',required:true}]},
+      {label:'Freeze / Unfreeze Wallet', method:'PATCH', path:'/admin/wallets/:user_id/freeze', fields:[{name:'user_id',label:'User ID',required:true},{name:'is_frozen',label:'Frozen',type:'select',options:['true','false']}]},
+      {label:'Look Up Wallet', method:'GET', path:'/admin/wallets/:user_id', fields:[{name:'user_id',label:'User ID',required:true}], resultAsCard:true},
+    ]
+  },
+
+  { key:'payments', label:'Deposits', icon:'▤', group:'Finance', desc:'Deposit requests from users',
+    list:{ path:'/admin/payments/deposits', query:['status'], columns:[col('id','ID'),col('user_id','User'),col('amount','Amount',money),col('status','Status',statusBadge),col('created_at','Requested',dt)] },
+    rowActions:[
+      {label:'Put on Hold', kind:'confirm', method:'POST', path:'/admin/payments/deposits/:id/hold', idField:'id', body:[{name:'reason',label:'Reason',required:true}]},
+    ],
+    actions:[
+      {label:'View QR / Payment Settings', method:'GET', path:'/payments/settings', fields:[], resultAsCard:true},
+      {label:'Set / Change Deposit QR (UPI ID)', method:'PATCH', path:'/admin/payments/settings', fields:[
+        {name:'upi_id', label:'UPI ID (e.g. name@bank)'},
+        {name:'merchant_name', label:'Merchant / Payee Name'},
+        {name:'payment_note', label:'Payment Note (shown in UPI app)'},
+        {name:'is_upi_enabled', label:'UPI Deposits Enabled', type:'select', options:['true','false']},
+        {name:'min_deposit_amount', label:'Min Deposit Amount', type:'number'},
+        {name:'max_deposit_amount', label:'Max Deposit Amount', type:'number'},
+      ]},
+    ]
+  },
+
+  { key:'withdrawals', label:'Withdrawals', icon:'⇩', group:'Finance', desc:'Approve or reject withdrawal requests',
+    list:{ path:'/admin/withdrawals', query:['status'], columns:[col('id','ID'),col('user_id','User'),col('amount','Amount',money),col('status','Status',statusBadge),col('created_at','Requested',dt)] },
+    rowActions:[
+      {label:'Mark Completed', kind:'confirm', method:'POST', path:'/admin/withdrawals/:id/complete', idField:'id', body:[{name:'transaction_ref',label:'Transaction Reference',required:true}]},
+      {label:'Cancel', kind:'confirm', danger:true, method:'POST', path:'/admin/withdrawals/:id/cancel', idField:'id', body:[{name:'reason',label:'Reason',required:true}]},
+    ]
+  },
+
+  { key:'leaderboard', label:'Leaderboard', icon:'⇧', group:'Community', desc:'Player & team rankings',
+    list:{ path:'/leaderboard/players/top', columns:[col('id','ID'),col('user_id','User'),col('rank','Rank'),col('points','Points'),col('wins','Wins')] },
+    extraLists:[{label:'Top Teams', path:'/leaderboard/teams/top', columns:[col('id','ID'),col('team_id','Team'),col('rank','Rank'),col('points','Points')]}],
+    actions:[{label:'Recompute Rankings', method:'POST', path:'/admin/leaderboard/recompute-ranks', fields:[]}]
+  },
+
+  { key:'notifications', label:'Notifications', icon:'✉', group:'Community', desc:'Platform-wide announcements',
+    list:{ path:'/admin/notifications', columns:[col('id','ID'),col('title','Title'),col('body','Message'),col('created_at','Sent',dt)] },
+    actions:[{label:'Broadcast Notification', custom:'openBroadcastModal'}]
+  },
+
+  { key:'achievements', label:'Achievements', icon:'★', group:'Community', desc:'Badges & achievements catalog',
+    list:{ path:'/achievements', columns:[col('id','ID'),col('name','Name'),col('description','Description'),col('points','Points')] },
+    extraLists:[{label:'Badges', path:'/achievements/badges', columns:[col('id','ID'),col('name','Name'),col('icon_url','Icon URL')]}],
+    actions:[
+      {label:'Add Achievement', method:'POST', path:'/admin/achievements', fields:[{name:'name',label:'Name',required:true},{name:'description',label:'Description',type:'textarea'},{name:'points',label:'Points',type:'number'}]},
+      {label:'Add Badge', method:'POST', path:'/admin/achievements/badges', fields:[{name:'name',label:'Name',required:true},{name:'icon_url',label:'Icon URL'}]},
+    ]
+  },
+];
+
+/* ============================================================
+   NAV
+============================================================ */
+function buildNav(){
+  const nav = document.getElementById('navList');
+  nav.innerHTML = '';
+  let lastGroup = null;
+  MODULES.forEach(m=>{
+    if(m.group && m.group!==lastGroup){
+      lastGroup = m.group;
+      const g = document.createElement('div');
+      g.className='navGroupLabel'; g.textContent=m.group;
+      nav.appendChild(g);
+    }
+    const el = document.createElement('div');
+    el.className = 'navItem'; el.id = 'nav-'+m.key;
+    el.innerHTML = `<span class="ic">${m.icon}</span><span>${m.label}</span>`;
+    el.onclick = ()=>goSection(m.key);
+    nav.appendChild(el);
+  });
+}
+function goSection(key){
+  State.section = key;
+  document.querySelectorAll('.navItem').forEach(n=>n.classList.remove('active'));
+  const navEl = document.getElementById('nav-'+key); if(navEl) navEl.classList.add('active');
+  const mod = MODULES.find(m=>m.key===key);
+  document.getElementById('pageTitle').textContent = mod.label;
+  document.getElementById('pageSub').textContent = mod.desc || 'Overview of your platform';
+  if(key==='dashboard') renderDashboard();
+  else if(key==='matches') renderMatches();
+  else renderModule(mod);
+}
+
+/* ============================================================
+   DASHBOARD
+============================================================ */
+async function renderDashboard(){
+  const c = document.getElementById('content');
+  c.innerHTML = `
+    <div class="grid grid-4" id="statGrid">
+      ${['Total Users','Total Tournaments','Active Matches','Total Teams'].map(l=>`
+        <div class="glass statCard"><div class="lbl">${l}</div><div class="val"><span class="spinner"></span></div></div>
+      `).join('')}
+    </div>
+    <div class="glass pane" style="margin-top:16px;">
+      <div class="sectionHead"><div><h3>Welcome back</h3><div class="desc">Quick snapshot of platform activity</div></div></div>
+      <div id="dashMsg"></div>
+    </div>`;
+  const r = await apiCall('GET','/admin/dashboard/overview');
+  const vals = document.querySelectorAll('#statGrid .val');
+  if(r.ok){
+    const raw = r.data.data || r.data;
+    const t = raw.totals || raw;
+    const map = [
+      [t.total_users, 'accent'],
+      [t.total_tournaments, 'ok'],
+      [t.active_matches, 'accent'],
+      [t.total_teams, 'warn'],
+    ];
+    vals.forEach((v,i)=>{ v.textContent = map[i][0] ?? '—'; v.className='val '+map[i][1]; });
+    document.getElementById('dashMsg').innerHTML = `<div class="hint">Data refreshed just now. Use the menu on the left to manage each area of the platform.</div>`;
+  } else {
+    vals.forEach(v=>v.innerHTML='<span style="color:var(--danger);font-size:14px;">—</span>');
+    document.getElementById('dashMsg').innerHTML = `<div class="banner err">${friendlyError(r.data,r.status)}</div>`;
+  }
+}
+
+/* ============================================================
+   TOURNAMENTS / MATCHES — backend "match-refactor": a Tournament
+   IS the joinable/playable match now (no separate matches table).
+   This page: browse tournaments, create one, publish/view room,
+   change status, and (expand a row) enter kills/winner + pay out.
+============================================================ */
+let mtStatusFilter = '';
+
+async function renderMatches(){
+  const c = document.getElementById('content');
+  c.innerHTML = `
+    <div class="glass pane">
+      <div class="sectionHead"><div><h3>Tournaments</h3><div class="desc">Every tournament is a single playable match — filter by status, or create a new one</div></div></div>
+      <div class="tblToolbar">
+        <select id="mt-status" style="max-width:220px;">
+          <option value="">All statuses</option>
+          <option value="scheduled">Scheduled</option>
+          <option value="live">Live</option>
+          <option value="completed">Completed</option>
+          <option value="cancelled">Cancelled</option>
+        </select>
+        <button class="btn btn-ghost btn-sm" onclick="loadTournamentsList()">Refresh</button>
+        <button class="btn btn-primary btn-sm" onclick="openCreateTournamentModal()">Create Tournament</button>
+      </div>
+    </div>
+    <div id="mt-body"></div>
+  `;
+  document.getElementById('mt-status').value = mtStatusFilter;
+  document.getElementById('mt-status').onchange = (e)=>{ mtStatusFilter = e.target.value; loadTournamentsList(); };
+  loadTournamentsList();
+}
+
+function openCreateTournamentModal(){
+  const fields = [
+    {name:'title', label:'Title', required:true},
+    {name:'organizer', label:'Organizer', required:true},
+    {name:'game_id', label:'Game ID', required:true},
+    {name:'entry_fee', label:'Entry Fee', type:'number'},
+    {name:'prize_pool', label:'Prize Pool', type:'number'},
+    {name:'max_players', label:'Max Players', type:'number', required:true},
+    {name:'registration_mode', label:'Registration Mode', type:'select', options:['solo','team_invite','auto_random']},
+    {name:'team_size', label:'Team Size', type:'number'},
+    {name:'visibility', label:'Visibility', type:'select', options:['public','private','unlisted']},
+    {name:'description', label:'Description', type:'textarea'},
+  ];
+  buildModal('Create Tournament', 'This tournament is itself the match players join and play', fields, async ()=>{
+    const {out, missing} = collectFields(fields);
+    if(missing.length){ document.getElementById('modalMsg').innerHTML = `<div class="banner err">Please fill: ${missing.join(', ')}</div>`; return; }
+    document.getElementById('modalSubmitBtn').disabled = true;
+    document.getElementById('modalMsg').innerHTML = `<div class="loadingRow"><span class="spinner"></span> Working…</div>`;
+    const r = await apiCall('POST', `/tournaments`, {body: out});
+    document.getElementById('modalSubmitBtn').disabled = false;
+    if(r.ok){
+      document.getElementById('modalMsg').innerHTML = `<div class="banner ok">Tournament created.</div>`;
+      setTimeout(()=>{ closeModal(); loadTournamentsList(); }, 900);
+    } else {
+      document.getElementById('modalMsg').innerHTML = `<div class="banner err">${friendlyError(r.data, r.status)}</div>`;
+    }
+  }, 'Create');
+}
+
+async function loadTournamentsList(){
+  const body = document.getElementById('mt-body');
+  body.innerHTML = `<div class="glass pane"><div class="loadingRow"><span class="spinner"></span> Loading…</div></div>`;
+  const query = {page:1, page_size:50};
+  if(mtStatusFilter) query.status = mtStatusFilter;
+  const r = await apiCall('GET', `/tournaments`, {query});
+  if(!r.ok){
+    body.innerHTML = `<div class="glass pane"><div class="banner err">${friendlyError(r.data, r.status)}</div></div>`;
+    return;
+  }
+  const items = extractItems(r.data);
+  if(!items.length){
+    body.innerHTML = `<div class="glass pane"><div class="empty">No tournaments yet — use Create Tournament above.</div></div>`;
+    return;
+  }
+  const rows = items.map(m=>`
+    <tr>
+      <td class="cellMuted">#${m.short_id ?? ''}<div class="cellMuted">${m.id}</div></td>
+      <td>${m.title}<div class="cellMuted">${m.tournament_uid||''}</div></td>
+      <td>${statusBadge(m.status)}</td>
+      <td>${money(m.entry_fee)} / ${money(m.prize_pool)}</td>
+      <td>${m.current_players}/${m.max_players}</td>
+      <td>
+        <div class="rowActions">
+          <button class="btn btn-ghost btn-sm" onclick="openSetRoomModal('${m.id}')">Publish Room</button>
+          <button class="btn btn-ghost btn-sm" onclick="viewRoom('${m.id}')">Get Room</button>
+          <button class="btn btn-ghost btn-sm" onclick="openTournamentStatusModal('${m.id}')">Status</button>
+          <button class="btn btn-primary btn-sm" onclick="toggleMatchResults('${m.id}')">Players / Results</button>
+        </div>
+      </td>
+    </tr>
+    <tr id="mt-results-row-${m.id}" style="display:none;"><td colspan="5"><div id="mt-results-${m.id}"></div></td></tr>
+  `).join('');
+  body.innerHTML = `
+    <div class="glass pane">
+      <div class="sectionHead"><div><h3>Tournaments</h3></div></div>
+      <div class="tableWrap"><table class="dataTable"><thead><tr>
+        <th>ID</th><th>Title</th><th>Status</th><th>Entry / Prize</th><th>Players</th><th>Actions</th>
+      </tr></thead><tbody>${rows}</tbody></table></div>
+    </div>
+  `;
+}
+
+function openSetRoomModal(tournamentId){
+  const fields = [{name:'room_id',label:'Room ID',required:true},{name:'room_password',label:'Room Password',required:true}];
+  buildModal('Publish Room', 'Publishing a room auto-flips the tournament to LIVE.', fields, async ()=>{
+    const {out, missing} = collectFields(fields);
+    if(missing.length){ document.getElementById('modalMsg').innerHTML = `<div class="banner err">Please fill: ${missing.join(', ')}</div>`; return; }
+    const r = await apiCall('POST', `/tournaments/${encodeURIComponent(tournamentId)}/publish-room`, {body: out});
+    if(r.ok){ document.getElementById('modalMsg').innerHTML = `<div class="banner ok">Room published.</div>`; setTimeout(()=>{closeModal(); loadTournamentsList();}, 900); }
+    else { document.getElementById('modalMsg').innerHTML = `<div class="banner err">${friendlyError(r.data, r.status)}</div>`; }
+  }, 'Publish');
+}
+async function viewRoom(tournamentId){
+  const r = await apiCall('GET', `/tournaments/${encodeURIComponent(tournamentId)}/room`);
+  if(r.ok){ const d = r.data.data || r.data; alert(`Room ID: ${d.room_id||'—'}\nPassword: ${d.room_password||'—'}\nPublished: ${d.published_at||'—'}`); }
+  else { alert(friendlyError(r.data, r.status)); }
+}
+function openTournamentStatusModal(tournamentId){
+  const fields = [{name:'status',label:'Status',type:'select',options:['scheduled','live','completed','cancelled'],required:true}];
+  buildModal('Update Tournament Status', '', fields, async ()=>{
+    const {out, missing} = collectFields(fields);
+    if(missing.length){ document.getElementById('modalMsg').innerHTML = `<div class="banner err">Please fill: ${missing.join(', ')}</div>`; return; }
+    const r = await apiCall('PATCH', `/tournaments/${encodeURIComponent(tournamentId)}/status`, {body: out});
+    if(r.ok){ document.getElementById('modalMsg').innerHTML = `<div class="banner ok">Updated.</div>`; setTimeout(()=>{closeModal(); loadTournamentsList();}, 900); }
+    else { document.getElementById('modalMsg').innerHTML = `<div class="banner err">${friendlyError(r.data, r.status)}</div>`; }
+  }, 'Save');
+}
+
+const openResultsMatchIds = new Set();
+async function toggleMatchResults(tournamentId){
+  const row = document.getElementById('mt-results-row-'+tournamentId);
+  const isOpen = openResultsMatchIds.has(tournamentId);
+  if(isOpen){ row.style.display='none'; openResultsMatchIds.delete(tournamentId); return; }
+  openResultsMatchIds.add(tournamentId);
+  row.style.display='';
+  const holder = document.getElementById('mt-results-'+tournamentId);
+  holder.innerHTML = `<div class="loadingRow"><span class="spinner"></span> Loading players…</div>`;
+  const r = await apiCall('GET', `/tournaments/${encodeURIComponent(tournamentId)}/admin/details`);
+  if(!r.ok){ holder.innerHTML = `<div class="banner err">${friendlyError(r.data, r.status)}</div>`; return; }
+  renderMatchResultsPanel(holder, r.data.data || r.data);
+}
+
+function renderMatchResultsPanel(holder, d){
+  const rows = (d.players||[]).map(p=>`
+    <tr>
+      <td>${p.full_name||'—'}<div class="cellMuted">${p.phone_number||''}</div></td>
+      <td>${p.game_nickname||'—'}<div class="cellMuted">${p.game_uid||''}</div></td>
+      <td>${p.team_name||'—'}</td>
+      <td><input type="number" min="0" style="width:80px;" id="mr-kills-${p.user_id}" value="${p.kills}"></td>
+      <td><input type="checkbox" id="mr-winner-${p.user_id}" ${p.is_winner?'checked':''}></td>
+      <td>${p.winning_amount!=null ? money(p.winning_amount) + (p.winning_paid_at ? ' <span class="badge ok">Paid</span>' : ' <span class="badge warn">Unpaid</span>') : '—'}</td>
+      <td>
+        <div class="rowActions">
+          <button class="btn btn-ghost btn-sm" onclick="saveMatchResult('${d.id}','${p.user_id}')">Save</button>
+          <button class="btn btn-primary btn-sm" onclick="openPayWinnerModal('${d.id}','${p.user_id}')">Pay</button>
+        </div>
+      </td>
+    </tr>`).join('');
+  holder.innerHTML = `
+    <div class="hint" style="margin:10px 0;">Room: ${d.room_id||'—'} / ${d.room_password||'—'} · Entry Fee: ${money(d.entry_fee)} · Prize Pool: ${money(d.prize_pool)} · Joined: ${d.total_joined}/${d.max_players}</div>
+    <div class="tableWrap"><table class="dataTable"><thead><tr>
+      <th>Player</th><th>Game ID</th><th>Team</th><th>Kills</th><th>Winner</th><th>Payout</th><th>Actions</th>
+    </tr></thead><tbody>${rows || '<tr><td colspan="7" class="cellMuted">No players joined yet.</td></tr>'}</tbody></table></div>
+  `;
+}
+
+async function saveMatchResult(tournamentId, userId){
+  const kills = Number(document.getElementById(`mr-kills-${userId}`).value || 0);
+  const isWinner = document.getElementById(`mr-winner-${userId}`).checked;
+  const r = await apiCall('POST', `/tournaments/${encodeURIComponent(tournamentId)}/admin/players/${encodeURIComponent(userId)}/result`,
+    {body:{kills, is_winner:isWinner}});
+  if(r.ok){
+    const holder = document.getElementById('mt-results-'+tournamentId);
+    const dr = await apiCall('GET', `/tournaments/${encodeURIComponent(tournamentId)}/admin/details`);
+    if(dr.ok) renderMatchResultsPanel(holder, dr.data.data || dr.data);
+  } else { alert(friendlyError(r.data, r.status)); }
+}
+
+function openPayWinnerModal(tournamentId, userId){
+  buildModal('Pay Winner', `Credit winnings straight to this player's wallet.`, [
+    {name:'amount', label:'Amount', type:'number', required:true},
+    {name:'note', label:'Note'},
+  ], async ()=>{
+    const {out, missing} = collectFields([{name:'amount',label:'Amount',required:true,type:'number'},{name:'note',label:'Note'}]);
+    if(missing.length){ document.getElementById('modalMsg').innerHTML = `<div class="banner err">Please fill: ${missing.join(', ')}</div>`; return; }
+    document.getElementById('modalSubmitBtn').disabled = true;
+    document.getElementById('modalMsg').innerHTML = `<div class="loadingRow"><span class="spinner"></span> Working…</div>`;
+    const r = await apiCall('POST', `/tournaments/${encodeURIComponent(tournamentId)}/admin/players/${encodeURIComponent(userId)}/pay`, {body:out});
+    document.getElementById('modalSubmitBtn').disabled = false;
+    if(r.ok){
+      document.getElementById('modalMsg').innerHTML = `<div class="banner ok">Done — winner paid.</div>`;
+      setTimeout(async ()=>{
+        closeModal();
+        const holder = document.getElementById('mt-results-'+tournamentId);
+        const dr = await apiCall('GET', `/tournaments/${encodeURIComponent(tournamentId)}/admin/details`);
+        if(dr.ok && holder) renderMatchResultsPanel(holder, dr.data.data || dr.data);
+      }, 900);
+    } else {
+      document.getElementById('modalMsg').innerHTML = `<div class="banner err">${friendlyError(r.data, r.status)}</div>`;
+    }
+  }, 'Pay');
+}
+
+/* ============================================================
+   MODULE RENDERER — tables + friendly action buttons
+============================================================ */
+const listState = {};
+let paneLoaders = {};
+function escapeHtmlAdmin(s){ return String(s??'').replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+
+function renderModule(mod){
+  const c = document.getElementById('content');
+  let html = '';
+
+  if(mod.actions && mod.actions.length){
+    html += `<div class="glass pane">
+      <div class="sectionHead"><div><h3>Actions</h3><div class="desc">Common tasks for ${mod.label.toLowerCase()}</div></div></div>
+      <div class="actionsBar">
+        ${mod.actions.map((a,i)=>`<button class="btn btn-primary" style="width:auto;" onclick="openActionModal('${mod.key}',${i})">${a.label}</button>`).join('')}
+      </div>
+    </div>`;
+  }
+
+  if(mod.list && !mod.list.hidden){
+    html += `<div class="glass pane" id="listPane-main"></div>`;
+  }
+  if(mod.extraLists){
+    mod.extraLists.forEach((el,i)=>{ html += `<div class="glass pane" id="listPane-extra${i}"></div>`; });
+  }
+  if(mod.lookupOnly){
+    html += `<div class="glass pane"><div class="empty">Use the actions above — search by ID to look up a specific record.</div></div>`;
+  }
+
+  c.innerHTML = html;
+
+  if(mod.list && !mod.list.hidden) renderTablePane('listPane-main', mod, mod.list, {rowActions:mod.rowActions||[]});
+  if(mod.extraLists) mod.extraLists.forEach((el,i)=>renderTablePane('listPane-extra'+i, mod, el, {title:el.label}));
+}
+
+function extractItems(data){
+  const d = data.data || data;
+  if(Array.isArray(d)) return d;
+  if(Array.isArray(d.items)) return d.items;
+  if(Array.isArray(d.results)) return d.results;
+  for(const k in d){ if(Array.isArray(d[k])) return d[k]; }
+  return [];
+}
+function extractId(row){
+  return row.id ?? row.user_id ?? row.match_id ?? row.tournament_id ?? row._id ?? '';
+}
+
+async function renderTablePane(paneId, mod, listCfg, opts={}){
+  const pane = document.getElementById(paneId);
+  const key = paneId;
+  listState[key] = listState[key] || {page:1, search:''};
+  const st = listState[key];
+
+  pane.innerHTML = `
+    <div class="sectionHead"><div><h3>${opts.title || mod.label}</h3></div></div>
+    <div class="tblToolbar">
+      ${listCfg.query && listCfg.query.includes('search') ? `<input class="searchInput" style="max-width:260px;margin:0;" id="${key}-search" placeholder="${listCfg.searchPlaceholder||'Search…'}" value="${escapeHtmlAdmin(st.search||'')}" oninput="debouncedSearch('${key}')">` : '<span></span>'}
+      <button class="btn btn-ghost btn-sm" onclick="refreshPane('${paneId}','${mod.key}')">Refresh</button>
+    </div>
+    <div id="${key}-body"><div class="loadingRow"><span class="spinner"></span> Loading…</div></div>
+    <div class="pager" id="${key}-pager"></div>
+  `;
+
+  paneLoaders[key] = () => loadTablePaneData(paneId, mod, listCfg, opts);
+  await paneLoaders[key]();
+}
+
+async function loadTablePaneData(paneId, mod, listCfg, opts={}){
+  const key = paneId;
+  const st = listState[key] || (listState[key] = {page:1, search:''});
+  const body = document.getElementById(key+'-body');
+  const pager = document.getElementById(key+'-pager');
+  if(!body) return; // pane no longer on screen (user navigated away)
+  body.innerHTML = `<div class="loadingRow"><span class="spinner"></span> Loading…</div>`;
+
+  const query = {page: st.page, page_size: 15};
+  if(st.search) query.search = st.search;
+
+  const r = await apiCall('GET', listCfg.path, {query});
+  if(document.getElementById(key+'-body') !== body) return; // pane replaced meanwhile
+  if(!r.ok){
+    body.innerHTML = `<div class="banner err">${friendlyError(r.data, r.status)}</div>`;
+    return;
+  }
+  const items = extractItems(r.data);
+  if(!items.length){
+    body.innerHTML = `<div class="empty">No records found.</div>`;
+    if(pager) pager.innerHTML = '';
+    return;
+  }
+  const cols = listCfg.columns;
+  const rowActions = opts.rowActions || [];
+  let tableHtml = `<div class="tableWrap"><table class="dataTable"><thead><tr>${cols.map(c=>`<th>${c.label}</th>`).join('')}${rowActions.length?'<th>Actions</th>':''}</tr></thead><tbody>`;
+  items.forEach(row=>{
+    tableHtml += '<tr>' + cols.map(c=>{
+      let v = row[c.key];
+      if(v==null) return '<td class="cellMuted">—</td>';
+      return `<td>${c.fmt ? c.fmt(v) : String(v)}</td>`;
+    }).join('');
+    if(rowActions.length){
+      tableHtml += `<td><div class="rowActions">${rowActions.map((ra,i)=>{
+        const raId = ra.idField ? (row[ra.idField] ?? extractId(row)) : extractId(row);
+        return `<button class="btn ${ra.danger?'btn-danger':'btn-ghost'} btn-sm" onclick="openRowActionModal('${mod.key}',${i},'${raId}')">${ra.label}</button>`;
+      }).join('')}</div></td>`;
+    }
+    tableHtml += '</tr>';
+  });
+  tableHtml += '</tbody></table></div>';
+  body.innerHTML = tableHtml;
+
+  if(pager){
+    pager.innerHTML = `
+      <button class="btn btn-ghost btn-sm" ${st.page<=1?'disabled':''} onclick="changePage('${key}','${mod.key}',-1)">Previous</button>
+      <span>Page ${st.page}</span>
+      <button class="btn btn-ghost btn-sm" ${items.length<15?'disabled':''} onclick="changePage('${key}','${mod.key}',1)">Next</button>
+    `;
+  }
+}
+function refreshPane(paneId, modKey){ goSection(State.section); }
+let searchTimers = {};
+function debouncedSearch(key){
+  clearTimeout(searchTimers[key]);
+  searchTimers[key] = setTimeout(()=>{
+    const input = document.getElementById(key+'-search');
+    listState[key].search = input ? input.value : '';
+    listState[key].page = 1;
+    if(paneLoaders[key]) paneLoaders[key](); else goSection(State.section);
+  }, 450);
+}
+function changePage(key, modKey, delta){
+  listState[key].page = Math.max(1, (listState[key].page||1)+delta);
+  if(paneLoaders[key]) paneLoaders[key](); else goSection(State.section);
+}
+
+/* ============================================================
+   ACTION MODALS — friendly labeled forms, no raw JSON shown
+============================================================ */
+function fieldInputHtml(f){
+  if(f.type==='select'){
+    return `<select id="mf-${f.name}">${f.options.map(o=>`<option value="${o}">${o}</option>`).join('')}</select>`;
+  }
+  if(f.type==='textarea'){
+    return `<textarea id="mf-${f.name}" placeholder="${f.placeholder||''}"></textarea>`;
+  }
+  if(f.type==='csv'){
+    return `<input id="mf-${f.name}" type="text" placeholder="${f.placeholder||'e.g. 10:00, 10:30, 11:00'}">`;
+  }
+  return `<input id="mf-${f.name}" type="${f.type||'text'}" placeholder="${f.placeholder||''}">`;
+}
+function buildModal(title, desc, fields, onSubmit, submitLabel){
+  const card = document.getElementById('modalCard');
+  card.className = 'modalCard glass';
+  card.innerHTML = `
+    <div class="mhead">
+      <div><h3>${title}</h3><div class="mdesc">${desc||''}</div></div>
+      <div class="closeX" onclick="closeModal()">✕</div>
+    </div>
+    <div id="modalBody">
+      ${fields.length ? `<div class="formGrid">${fields.map(f=>`
+        <div class="field"><label>${f.label}${f.required?' *':''}</label>${fieldInputHtml(f)}</div>
+      `).join('')}</div>` : `<div class="hint">No additional details needed — just confirm.</div>`}
+      <div id="modalMsg"></div>
+      <div class="actionsBar">
+        <button class="btn btn-primary" style="width:auto;" id="modalSubmitBtn">${submitLabel}</button>
+        <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+      </div>
+      <div id="modalResult"></div>
+    </div>
+  `;
+  document.getElementById('modalSubmitBtn').onclick = onSubmit;
+  document.getElementById('modalOverlay').classList.add('active');
+}
+function closeModal(){ document.getElementById('modalOverlay').classList.remove('active'); }
+
+/* ============================================================
+   TOASTS — replaces browser alert() with proper themed toasts
+============================================================ */
+function showToast(message, type='ok', duration=4000){
+  const c = document.getElementById('toastContainer');
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  const icon = type==='ok' ? '✓' : type==='err' ? '✕' : 'i';
+  el.innerHTML = `<div class="ticon">${icon}</div><div class="tbody">${message}</div><div class="tclose" onclick="dismissToast(this.parentElement)">✕</div>`;
+  c.appendChild(el);
+  requestAnimationFrame(()=> el.classList.add('show'));
+  el._timer = setTimeout(()=> dismissToast(el), duration);
+}
+function dismissToast(el){
+  if(!el) return;
+  clearTimeout(el._timer);
+  el.classList.remove('show');
+  el.classList.add('hide');
+  setTimeout(()=> el.remove(), 280);
+}
+
+/* ============================================================
+   STYLED PROMPT — replaces browser prompt() with a themed dialog
+   Usage: const vals = await showPrompt({title, desc, danger, fields:[{name,label,type,placeholder}]});
+   Returns an object keyed by field name, or null if cancelled.
+============================================================ */
+function closePrompt(result){
+  const ov = document.getElementById('promptOverlay');
+  ov.classList.remove('active');
+  if(ov._resolve){ ov._resolve(result); ov._resolve = null; }
+}
+function showPrompt({title, desc='', danger=false, confirmLabel='Confirm', fields=[]}){
+  const ov = document.getElementById('promptOverlay');
+  const card = document.getElementById('promptCard');
+  card.innerHTML = `
+    <h3>${title}</h3>
+    ${desc?`<div class="pdesc">${desc}</div>`:''}
+    ${fields.map(f=>`
+      <div class="field"><label>${f.label}${f.required!==false?' *':''}</label>
+        ${f.type==='textarea'
+          ? `<textarea id="pf-${f.name}" placeholder="${f.placeholder||''}"></textarea>`
+          : f.type==='select'
+          ? `<select id="pf-${f.name}">${f.options.map(o=>`<option value="${o}">${o}</option>`).join('')}</select>`
+          : `<input id="pf-${f.name}" type="${f.type||'text'}" placeholder="${f.placeholder||''}" ${f.min!=null?`min="${f.min}"`:''}>`}
+      </div>
+    `).join('')}
+    <div class="perr" id="promptErr"></div>
+    <div class="actionsBar">
+      <button class="btn ${danger?'btn-danger':'btn-primary'}" style="width:auto;" id="promptOkBtn">${confirmLabel}</button>
+      <button class="btn btn-ghost" onclick="closePrompt(null)">Cancel</button>
+    </div>
+  `;
+  ov.classList.add('active');
+  setTimeout(()=>{ const first = card.querySelector('input,textarea'); if(first) first.focus(); }, 50);
+
+  document.getElementById('promptOkBtn').onclick = ()=>{
+    const out = {};
+    for(const f of fields){
+      const el = document.getElementById('pf-'+f.name);
+      let v = el.value.trim();
+      if(f.required!==false && !v){
+        document.getElementById('promptErr').textContent = `Please fill: ${f.label}`;
+        el.focus();
+        return;
+      }
+      if(f.type==='number'){
+        const num = Number(v);
+        if(v && (isNaN(num) || (f.min!=null && num < f.min))){
+          document.getElementById('promptErr').textContent = `${f.label} must be a valid number${f.min!=null?` ≥ ${f.min}`:''}.`;
+          el.focus();
+          return;
+        }
+        v = num;
+      }
+      out[f.name] = v;
+    }
+    closePrompt(out);
+  };
+
+  return new Promise(resolve => { ov._resolve = resolve; });
+}
+
+function collectFields(fields){
+  const out = {}; let missing = [];
+  fields.forEach(f=>{
+    const el = document.getElementById('mf-'+f.name);
+    let v = el.value;
+    if(f.required && !v){ missing.push(f.label); }
+    if(v==='') return;
+    if(f.type==='number') out[f.name] = Number(v);
+    else if(f.type==='csv') out[f.name] = v.split(',').map(s=>s.trim()).filter(Boolean);
+    else if(f.type==='datetime-local') out[f.name] = v + ':00+05:30'; // explicit IST offset, unambiguous for backend
+    else out[f.name] = v;
+  });
+  return {out, missing};
+}
+
+function generateSlotTimes(firstTime, lastTime, intervalMin){
+  const [fh, fm] = firstTime.split(':').map(Number);
+  const [lh, lm] = lastTime.split(':').map(Number);
+  let cur = fh*60 + fm;
+  const end = lh*60 + lm;
+  const times = [];
+  while(cur <= end){
+    const h = String(Math.floor(cur/60)).padStart(2,'0');
+    const m = String(cur%60).padStart(2,'0');
+    times.push(`${h}:${m}`);
+    cur += intervalMin;
+  }
+  return times;
+}
+
+async function fetchGameOptionsHtml(selectedId){
+  const r = await apiCall('GET', '/games', {query:{}});
+  if(!r.ok) return `<option value="">Could not load games</option>`;
+  const items = extractItems(r.data);
+  if(!items.length) return `<option value="">No games yet — add one in "Games" first</option>`;
+  return `<option value="">Select a game…</option>` + items.map(g=>
+    `<option value="${g.id}" ${g.id===selectedId?'selected':''}>${g.name}</option>`
+  ).join('');
+}
+
+/* ============================================================
+   USER PROFILE — full detail view (wallet, transactions, matches,
+   reports & appeals) opened from the Users list "View Profile" action.
+============================================================ */
+let profileState = {};
+
+async function openUserProfileModal(userId){
+  const card = document.getElementById('modalCard');
+  card.className = 'modalCard glass wide';
+  card.innerHTML = `
+    <div class="mhead">
+      <div><h3>User Profile</h3><div class="mdesc">Loading…</div></div>
+      <div class="closeX" onclick="closeModal()">✕</div>
+    </div>
+    <div class="loadingRow"><span class="spinner"></span> Loading profile…</div>
+  `;
+  document.getElementById('modalOverlay').classList.add('active');
+
+  const [userRes, walletRes] = await Promise.all([
+    apiCall('GET', '/admin/users', {query:{search:userId, page:1, page_size:1}}),
+    apiCall('GET', `/admin/wallets/${encodeURIComponent(userId)}`, {}),
+  ]);
+
+  const user = userRes.ok ? (extractItems(userRes.data)[0] || null) : null;
+  const wallet = walletRes.ok ? (walletRes.data.data || walletRes.data) : null;
+
+  if(!user){
+    card.innerHTML = `
+      <div class="mhead"><div><h3>User Profile</h3></div><div class="closeX" onclick="closeModal()">✕</div></div>
+      <div class="banner err">Could not load this user. ${friendlyError(userRes.data, userRes.status)}</div>
+    `;
+    return;
+  }
+
+  profileState = {userId, user, wallet, tab:'overview'};
+  renderUserProfileModal();
+}
+
+function renderUserProfileModal(){
+  const {userId, user, wallet} = profileState;
+  const card = document.getElementById('modalCard');
+  const isLocked = String(user.status||'').toLowerCase().includes('lock') || String(user.status||'').toLowerCase().includes('ban') || String(user.status||'').toLowerCase().includes('suspend');
+  const initials = (user.full_name||'?').trim().split(/\s+/).slice(0,2).map(w=>w[0]).join('').toUpperCase();
+
+  card.innerHTML = `
+    <div class="mhead">
+      <div><h3>User Profile</h3></div>
+      <div class="closeX" onclick="closeModal()">✕</div>
+    </div>
+
+    <div class="profileTopRow">
+      <div class="profileIdent">
+        <div class="profileAvatar">${initials}</div>
+        <div>
+          <div class="pname">${user.full_name||'—'} <span style="font-weight:500;font-size:12px;color:var(--sub2);">#${user.short_id??''}</span></div>
+          <div class="pmeta">
+            <span>${user.email||'—'}</span><span>·</span><span>${user.phone_number||'—'}</span><span>·</span><span>UID ${user.player_uid||'—'}</span>
+          </div>
+        </div>
+      </div>
+      ${statusBadge(user.status)}
+    </div>
+
+    <div class="profileStats">
+      <div class="pStatCard"><div class="lbl">Available</div><div class="val">${wallet?money(wallet.available_balance):'—'}</div></div>
+      <div class="pStatCard"><div class="lbl">Locked</div><div class="val">${wallet?money(wallet.locked_balance):'—'}</div></div>
+      <div class="pStatCard"><div class="lbl">Total Balance</div><div class="val">${wallet?money(wallet.total_balance):'—'}</div></div>
+      <div class="pStatCard"><div class="lbl">Wallet</div><div class="val">${wallet?statusBadge(wallet.is_frozen?'frozen':'active'):'—'}</div></div>
+      <div class="pStatCard"><div class="lbl">Joined</div><div class="val" style="font-size:13px;">${dt(user.created_at)}</div></div>
+    </div>
+
+    <div class="profileActionsBar">
+      <button class="btn btn-sm ${isLocked?'btn-primary':'btn-danger'}" onclick="profileToggleLock()">${isLocked?'Unlock Account':'Lock Account'}</button>
+      <button class="btn btn-sm btn-primary" onclick="profileWalletAction('credit')">Credit Wallet</button>
+      <button class="btn btn-sm btn-danger" onclick="profileWalletAction('debit')">Debit Wallet</button>
+      <button class="btn btn-sm btn-ghost" onclick="profileWalletAction('freeze')">${wallet&&wallet.is_frozen?'Unfreeze Wallet':'Freeze Wallet'}</button>
+    </div>
+
+    <div class="profileTabs" id="profileTabs">
+      ${[['overview','Overview'],['transactions','Transactions'],['deposits','Deposits'],['withdrawals','Withdrawals'],['matches','Matches'],['reports','Reports'],['appeals','Appeals']].map(([k,label])=>
+        `<button data-tab="${k}" class="${profileState.tab===k?'active':''}" onclick="switchProfileTab('${k}')">${label}</button>`
+      ).join('')}
+    </div>
+
+    <div class="profilePane" id="profilePane"><div class="loadingRow"><span class="spinner"></span> Loading…</div></div>
+  `;
+  loadProfileTab();
+}
+
+function switchProfileTab(t){
+  profileState.tab = t;
+  document.getElementById('profileTabs').querySelectorAll('button').forEach(b=>b.classList.toggle('active', b.dataset.tab===t));
+  document.getElementById('profilePane').innerHTML = `<div class="loadingRow"><span class="spinner"></span> Loading…</div>`;
+  loadProfileTab();
+}
+
+async function loadProfileTab(){
+  const {userId, tab} = profileState;
+  const pane = document.getElementById('profilePane');
+
+  if(tab==='overview'){
+    const {user} = profileState;
+    pane.innerHTML = `
+      <div class="formGrid">
+        <div class="field"><label>Full Name</label><div>${user.full_name||'—'}</div></div>
+        <div class="field"><label>Email</label><div>${user.email||'—'} ${user.is_email_verified?'<span class="badge ok">Verified</span>':'<span class="badge warn">Unverified</span>'}</div></div>
+        <div class="field"><label>Phone</label><div>${user.phone_number||'—'}</div></div>
+        <div class="field"><label>Player UID</label><div>${user.player_uid||'—'}</div></div>
+        <div class="field"><label>Role</label><div>${statusBadge(user.role)}</div></div>
+        <div class="field"><label>Country</label><div>${user.country||'—'}</div></div>
+        <div class="field"><label>Active</label><div>${user.is_active?'<span class="badge ok">Yes</span>':'<span class="badge danger">No</span>'}</div></div>
+        <div class="field"><label>User ID</label><div style="font-size:11px;word-break:break-all;">${user.id}</div></div>
+      </div>
+      ${user.bio?`<div class="field" style="margin-top:10px;"><label>Bio</label><div>${user.bio}</div></div>`:''}
+    `;
+    return;
+  }
+
+  if(tab==='transactions'){
+    const r = await apiCall('GET', '/admin/wallets/transactions', {query:{user_id:userId, page:1, page_size:50}});
+    if(!r.ok){ pane.innerHTML = `<div class="banner err">${friendlyError(r.data, r.status)}</div>`; return; }
+    const items = extractItems(r.data);
+    pane.innerHTML = items.length ? `<div class="tableWrap"><table class="dataTable"><thead><tr><th>Type</th><th>Amount</th><th>Status</th><th>Balance After</th><th>Description</th><th>When</th></tr></thead><tbody>
+      ${items.map(t=>`<tr><td>${statusBadge(t.type)}</td><td>${money(t.amount)}</td><td>${statusBadge(t.status)}</td><td>${money(t.available_balance_after)}</td><td>${t.description||'—'}</td><td>${dt(t.created_at)}</td></tr>`).join('')}
+    </tbody></table></div>` : `<div class="hint">No transactions yet.</div>`;
+    return;
+  }
+
+  if(tab==='deposits'){
+    const r = await apiCall('GET', '/admin/payments/deposits', {query:{user_id:userId, page:1, page_size:50}});
+    if(!r.ok){ pane.innerHTML = `<div class="banner err">${friendlyError(r.data, r.status)}</div>`; return; }
+    const items = extractItems(r.data);
+    pane.innerHTML = items.length ? `<div class="tableWrap"><table class="dataTable"><thead><tr><th>Short ID</th><th>Provider</th><th>Amount</th><th>UTR</th><th>Status</th><th>Submitted</th><th>Proof</th><th>Actions</th></tr></thead><tbody>
+      ${items.map(d=>`<tr>
+        <td>${d.short_id}</td><td>${d.provider||'—'}</td><td>${money(d.amount)}</td><td>${d.utr_number||'—'}</td><td>${statusBadge(d.status)}</td><td>${dt(d.submitted_at)}</td>
+        <td>${d.screenshot_url?`<a href="${d.screenshot_url}" target="_blank" rel="noopener">View</a>`:'—'}</td>
+        <td><div class="miniActions">${
+          String(d.status).toLowerCase()==='pending' ? `
+            <button class="btn btn-sm btn-primary" onclick="profileApproveDeposit('${d.id}')">Approve</button>
+            <button class="btn btn-sm btn-danger" onclick="profileRejectDeposit('${d.id}')">Reject</button>
+          ` : '<span class="pillNote">No actions</span>'
+        }</div></td>
+      </tr>`).join('')}
+    </tbody></table></div>` : `<div class="hint">No deposit requests from this user.</div>`;
+    return;
+  }
+
+  if(tab==='withdrawals'){
+    const r = await apiCall('GET', '/admin/withdrawals', {query:{page:1, page_size:100}});
+    if(!r.ok){ pane.innerHTML = `<div class="banner err">${friendlyError(r.data, r.status)}</div>`; return; }
+    const items = extractItems(r.data).filter(w => w.user_id===userId);
+    pane.innerHTML = items.length ? `<div class="tableWrap"><table class="dataTable"><thead><tr><th>Short ID</th><th>Amount</th><th>Method</th><th>Status</th><th>Requested</th><th>Actions</th></tr></thead><tbody>
+      ${items.map(w=>`<tr>
+        <td>${w.short_id}</td><td>${money(w.amount)}</td><td>${w.method_type||'—'}</td><td>${statusBadge(w.status)}</td><td>${dt(w.created_at)}</td>
+        <td><div class="miniActions">${
+          String(w.status).toLowerCase()==='pending' ? `
+            <button class="btn btn-sm btn-primary" onclick="profileCompleteWithdrawal('${w.id}')">Complete</button>
+            <button class="btn btn-sm btn-danger" onclick="profileCancelWithdrawal('${w.id}')">Cancel</button>
+          ` : '<span class="pillNote">No actions</span>'
+        }</div></td>
+      </tr>`).join('')}
+    </tbody></table></div>` : `<div class="hint">No withdrawal requests from this user.</div>`;
+    return;
+  }
+
+  if(tab==='matches'){
+    const r = await apiCall('GET', `/admin/users/${encodeURIComponent(userId)}/tournament-history`, {query:{page:1, page_size:50}});
+    if(!r.ok){ pane.innerHTML = `<div class="banner err">${friendlyError(r.data, r.status)}</div>`; return; }
+    const items = extractItems(r.data);
+    pane.innerHTML = items.length ? `<div class="tableWrap"><table class="dataTable"><thead><tr><th>Participant UID</th><th>Type</th><th>Team</th><th>Status</th><th>Payment</th><th>Joined</th></tr></thead><tbody>
+      ${items.map(p=>`<tr><td>${p.participant_uid||'—'}</td><td>${p.registration_type||'—'}</td><td>${p.team_name||'—'}</td><td>${statusBadge(p.status)}</td><td>${statusBadge(p.payment_status)}</td><td>${dt(p.joined_at)}</td></tr>`).join('')}
+    </tbody></table></div>` : `<div class="hint">No tournament/match history yet.</div>`;
+    return;
+  }
+
+  if(tab==='reports'){
+    const r = await apiCall('GET', '/admin/reports', {query:{page:1, page_size:100}});
+    if(!r.ok){ pane.innerHTML = `<div class="banner err">${friendlyError(r.data, r.status)}</div>`; return; }
+    const items = extractItems(r.data).filter(rp => rp.reporter_id===userId || (rp.target_type==='user' && rp.target_id===userId));
+    pane.innerHTML = items.length ? `<div class="tableWrap"><table class="dataTable"><thead><tr><th>Short ID</th><th>Role</th><th>Reason</th><th>Status</th><th>Filed</th></tr></thead><tbody>
+      ${items.map(rp=>`<tr><td>${rp.short_id}</td><td>${rp.reporter_id===userId?'Reporter':'Reported'}</td><td>${rp.reason||'—'}</td><td>${statusBadge(rp.status)}</td><td>${dt(rp.created_at)}</td></tr>`).join('')}
+    </tbody></table></div>` : `<div class="hint">No reports involving this user.</div>`;
+    return;
+  }
+
+  if(tab==='appeals'){
+    const r = await apiCall('GET', '/admin/appeals', {query:{page:1, page_size:100}});
+    if(!r.ok){ pane.innerHTML = `<div class="banner err">${friendlyError(r.data, r.status)}</div>`; return; }
+    const items = extractItems(r.data).filter(ap => ap.user_id===userId);
+    pane.innerHTML = items.length ? `<div class="tableWrap"><table class="dataTable"><thead><tr><th>Message</th><th>Status</th><th>Notes</th><th>Filed</th></tr></thead><tbody>
+      ${items.map(ap=>`<tr><td>${ap.message||'—'}</td><td>${statusBadge(ap.status)}</td><td>${ap.review_notes||'—'}</td><td>${dt(ap.created_at)}</td></tr>`).join('')}
+    </tbody></table></div>` : `<div class="hint">No appeals from this user.</div>`;
+    return;
+  }
+}
+
+async function profileToggleLock(){
+  const {userId, user} = profileState;
+  const isLocked = String(user.status||'').toLowerCase().includes('lock') || String(user.status||'').toLowerCase().includes('ban') || String(user.status||'').toLowerCase().includes('suspend');
+  const vals = await showPrompt({
+    title: isLocked ? 'Unlock Account' : 'Lock Account',
+    desc: isLocked ? 'This will restore the user\'s access.' : 'This will block the user from logging in.',
+    danger: !isLocked,
+    confirmLabel: isLocked ? 'Unlock' : 'Lock',
+    fields: [{name:'reason', label:'Reason', type:'textarea', required:!isLocked}],
+  });
+  if(!vals) return;
+  const path = isLocked ? `/admin/security/accounts/${encodeURIComponent(userId)}/unlock` : `/admin/security/accounts/${encodeURIComponent(userId)}/lock`;
+  const r = await apiCall('POST', path, {body:{reason: vals.reason||''}});
+  if(r.ok){
+    showToast(isLocked ? 'Account unlocked.' : 'Account locked.', 'ok');
+    await openUserProfileModal(userId);
+  } else {
+    showToast(friendlyError(r.data, r.status), 'err');
+  }
+}
+
+async function profileWalletAction(kind){
+  const {userId, wallet} = profileState;
+
+  if(kind==='freeze'){
+    const nowFrozen = !(wallet && wallet.is_frozen);
+    const vals = await showPrompt({
+      title: nowFrozen ? 'Freeze Wallet' : 'Unfreeze Wallet',
+      desc: nowFrozen ? 'The user won\'t be able to spend or withdraw while frozen.' : 'This restores normal wallet activity for the user.',
+      danger: nowFrozen,
+      confirmLabel: nowFrozen ? 'Freeze' : 'Unfreeze',
+      fields: [{name:'reason', label:'Reason', type:'textarea'}],
+    });
+    if(!vals) return;
+    const r = await apiCall('PATCH', `/admin/wallets/${encodeURIComponent(userId)}/freeze`, {body:{is_frozen:nowFrozen, reason:vals.reason}});
+    if(r.ok){ showToast(nowFrozen ? 'Wallet frozen.' : 'Wallet unfrozen.', 'ok'); await openUserProfileModal(userId); }
+    else { showToast(friendlyError(r.data, r.status), 'err'); }
+    return;
+  }
+
+  const vals = await showPrompt({
+    title: kind==='credit' ? 'Credit Wallet' : 'Debit Wallet',
+    desc: kind==='credit' ? 'Add funds to this user\'s wallet.' : 'Remove funds from this user\'s wallet.',
+    danger: kind==='debit',
+    confirmLabel: kind==='credit' ? 'Credit' : 'Debit',
+    fields: [
+      {name:'amount', label:'Amount (₹)', type:'number', min:0.01},
+      {name:'reason', label:'Reason', type:'textarea'},
+    ],
+  });
+  if(!vals) return;
+  if(!vals.reason || vals.reason.trim().length<3){ showToast('Reason must be at least 3 characters.', 'err'); return; }
+  const r = await apiCall('POST', `/admin/wallets/${encodeURIComponent(userId)}/${kind}`, {body:{amount:vals.amount, reason:vals.reason}});
+  if(r.ok){ showToast(kind==='credit' ? 'Wallet credited.' : 'Wallet debited.', 'ok'); await openUserProfileModal(userId); }
+  else { showToast(friendlyError(r.data, r.status), 'err'); }
+}
+
+async function profileApproveDeposit(depositId){
+  const vals = await showPrompt({
+    title: 'Approve Deposit',
+    desc: 'This will credit the user\'s wallet for this deposit.',
+    confirmLabel: 'Approve',
+    fields: [{name:'admin_note', label:'Admin Note', type:'textarea', required:false}],
+  });
+  if(!vals) return;
+  const r = await apiCall('POST', `/admin/payments/deposits/${encodeURIComponent(depositId)}/approve`, {body:{admin_note: vals.admin_note||null}});
+  if(r.ok){ showToast('Deposit approved.', 'ok'); loadProfileTab(); }
+  else { showToast(friendlyError(r.data, r.status), 'err'); }
+}
+
+async function profileRejectDeposit(depositId){
+  const vals = await showPrompt({
+    title: 'Reject Deposit',
+    danger: true,
+    confirmLabel: 'Reject',
+    fields: [
+      {name:'reason', label:'Reason', type:'select', options:['invalid_utr','wrong_amount','fake_screenshot','duplicate_utr','other']},
+      {name:'note', label:'Note', type:'textarea', required:false},
+    ],
+  });
+  if(!vals) return;
+  const r = await apiCall('POST', `/admin/payments/deposits/${encodeURIComponent(depositId)}/reject`, {body:{reason: vals.reason, note: vals.note||null}});
+  if(r.ok){ showToast('Deposit rejected.', 'ok'); loadProfileTab(); }
+  else { showToast(friendlyError(r.data, r.status), 'err'); }
+}
+
+async function profileCompleteWithdrawal(withdrawalId){
+  const vals = await showPrompt({
+    title: 'Complete Withdrawal',
+    desc: 'Mark this withdrawal as paid out to the user.',
+    confirmLabel: 'Complete',
+    fields: [{name:'admin_note', label:'Admin Note', type:'textarea', required:false}],
+  });
+  if(!vals) return;
+  const r = await apiCall('POST', `/admin/withdrawals/${encodeURIComponent(withdrawalId)}/complete`, {body:{admin_note: vals.admin_note||null}});
+  if(r.ok){ showToast('Withdrawal completed.', 'ok'); loadProfileTab(); }
+  else { showToast(friendlyError(r.data, r.status), 'err'); }
+}
+
+async function profileCancelWithdrawal(withdrawalId){
+  const vals = await showPrompt({
+    title: 'Cancel Withdrawal',
+    desc: 'This will refund the held amount back to the user\'s wallet.',
+    danger: true,
+    confirmLabel: 'Cancel Withdrawal',
+    fields: [{name:'admin_note', label:'Admin Note', type:'textarea', required:false}],
+  });
+  if(!vals) return;
+  const r = await apiCall('POST', `/admin/withdrawals/${encodeURIComponent(withdrawalId)}/cancel`, {body:{admin_note: vals.admin_note||null}});
+  if(r.ok){ showToast('Withdrawal cancelled.', 'ok'); loadProfileTab(); }
+  else { showToast(friendlyError(r.data, r.status), 'err'); }
+}
+
+async function openBroadcastModal(){
+  buildModal('Broadcast Notification', 'Notifications', [], ()=>{}, 'Send');
+  document.getElementById('modalBody').innerHTML = `
+    <div class="formGrid">
+      <div class="field"><label>Title *</label><input id="mf-title" type="text" placeholder="Notification title"></div>
+      <div class="field"><label>Message *</label><textarea id="mf-body" placeholder="Notification message"></textarea></div>
+      <div class="field"><label>Send Via *</label>
+        <select id="mf-channel">
+          <option value="in_app_push">In-App + Push</option>
+          <option value="email">Email</option>
+          <option value="both">Both (In-App + Push and Email)</option>
+        </select>
+      </div>
+      <div class="field"><label>Target User IDs (optional, comma-separated — leave empty for all users)</label><input id="mf-target_user_ids" type="text" placeholder="e.g. uuid1, uuid2"></div>
+    </div>
+    <div id="modalMsg"></div>
+    <div class="actionsBar">
+      <button class="btn btn-primary" style="width:auto;" id="modalSubmitBtn">Send</button>
+      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+    </div>
+    <div id="modalResult"></div>
+  `;
+  document.getElementById('modalSubmitBtn').onclick = async ()=>{
+    const title = document.getElementById('mf-title').value.trim();
+    const body = document.getElementById('mf-body').value.trim();
+    const channel = document.getElementById('mf-channel').value;
+    const targetRaw = document.getElementById('mf-target_user_ids').value.trim();
+    if(!title || !body){
+      document.getElementById('modalMsg').innerHTML = `<div class="banner err">Please fill: Title, Message</div>`;
+      return;
+    }
+    const payload = {
+      title,
+      body,
+      send_push: (channel==='in_app_push' || channel==='both'),
+      send_email: (channel==='email' || channel==='both'),
+    };
+    if(targetRaw){
+      payload.target_user_ids = targetRaw.split(',').map(s=>s.trim()).filter(Boolean);
+    }
+    document.getElementById('modalSubmitBtn').disabled = true;
+    document.getElementById('modalMsg').innerHTML = `<div class="loadingRow"><span class="spinner"></span> Working…</div>`;
+    const r = await apiCall('POST', '/admin/notifications/broadcast', {body: payload});
+    document.getElementById('modalSubmitBtn').disabled = false;
+    if(r.ok){
+      document.getElementById('modalMsg').innerHTML = `<div class="banner ok">Done — request completed successfully.</div>`;
+      setTimeout(()=>{ closeModal(); goSection(State.section); }, 900);
+    } else {
+      document.getElementById('modalMsg').innerHTML = `<div class="banner err">${friendlyError(r.data, r.status)}</div>`;
+    }
+  };
+}
+
+async function openCreateScheduleModal(){
+  buildModal('Create Schedule', 'Match Schedules', [], ()=>{}, 'Create');
+  document.getElementById('modalBody').innerHTML = `
+    <div class="formGrid">
+      <div class="field"><label>Game *</label><select id="mf-game_id"><option>Loading games…</option></select></div>
+      <div class="field"><label>Category</label><select id="mf-category"><option value="solo">solo</option><option value="squad">squad</option></select></div>
+      <div class="field"><label>Squad Size (only for squad)</label><input id="mf-squad_size" type="number"></div>
+      <div class="field"><label>Entry Fee</label><input id="mf-entry_fee" type="number"></div>
+      <div class="field"><label>Prize Pool</label><input id="mf-prize_pool" type="number"></div>
+      <div class="field"><label>Max Players per Slot *</label><input id="mf-max_players_per_slot" type="number"></div>
+      <div class="field"><label>First Match Time * (IST)</label><input id="mf-first_time" type="time"></div>
+      <div class="field"><label>Last Match Time * (IST)</label><input id="mf-last_time" type="time"></div>
+      <div class="field"><label>Every</label><select id="mf-interval"><option value="15">15 min</option><option value="20">20 min</option><option value="30" selected>30 min</option><option value="45">45 min</option><option value="60">60 min</option></select></div>
+    </div>
+    <div class="hint" style="margin-top:8px;">One-time setup — after this, matches generate automatically every day, no need to repeat.</div>
+    <div id="modalMsg"></div>
+    <div class="actionsBar">
+      <button class="btn btn-primary" style="width:auto;" id="modalSubmitBtn">Create</button>
+      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+    </div>
+    <div id="modalResult"></div>
+  `;
+  document.getElementById('mf-game_id').innerHTML = await fetchGameOptionsHtml();
+  document.getElementById('modalSubmitBtn').onclick = async ()=>{
+    const game_id = document.getElementById('mf-game_id').value;
+    const first_time = document.getElementById('mf-first_time').value;
+    const last_time = document.getElementById('mf-last_time').value;
+    const interval = Number(document.getElementById('mf-interval').value);
+    const missing = [];
+    if(!game_id) missing.push('Game');
+    if(!first_time) missing.push('First Match Time');
+    if(!last_time) missing.push('Last Match Time');
+    if(missing.length){ document.getElementById('modalMsg').innerHTML = `<div class="banner err">Please fill: ${missing.join(', ')}</div>`; return; }
+    const body = {
+      game_id,
+      category: document.getElementById('mf-category').value,
+      max_players_per_slot: Number(document.getElementById('mf-max_players_per_slot').value || 0),
+      daily_slot_times: generateSlotTimes(first_time, last_time, interval),
+    };
+    const squadSize = document.getElementById('mf-squad_size').value;
+    if(squadSize!=='') body.squad_size = Number(squadSize);
+    const entryFee = document.getElementById('mf-entry_fee').value;
+    if(entryFee!=='') body.entry_fee = Number(entryFee);
+    const prizePool = document.getElementById('mf-prize_pool').value;
+    if(prizePool!=='') body.prize_pool = Number(prizePool);
+    document.getElementById('modalSubmitBtn').disabled = true;
+    document.getElementById('modalMsg').innerHTML = `<div class="loadingRow"><span class="spinner"></span> Working…</div>`;
+    const r = await apiCall('POST', '/schedules', {body});
+    document.getElementById('modalSubmitBtn').disabled = false;
+    if(r.ok){
+      document.getElementById('modalMsg').innerHTML = `<div class="banner ok">Done — ${body.daily_slot_times.length} matches/day scheduled.</div>`;
+      setTimeout(()=>{ closeModal(); goSection(State.section); }, 900);
+    } else {
+      document.getElementById('modalMsg').innerHTML = `<div class="banner err">${friendlyError(r.data, r.status)}</div>`;
+    }
+  };
+}
+
+async function openEditScheduleModal(id){
+  buildModal('Edit Schedule', `Applies to record #${id}.`, [], ()=>{}, 'Save');
+  document.getElementById('modalBody').innerHTML = `<div class="loadingRow"><span class="spinner"></span> Loading current schedule…</div>`;
+  const existing = await apiCall('GET', `/schedules/${encodeURIComponent(id)}`, {});
+  const s = existing.ok ? existing.data : {};
+  const times = Array.isArray(s.daily_slot_times) ? s.daily_slot_times : [];
+  document.getElementById('modalBody').innerHTML = `
+    <div class="formGrid">
+      <div class="field"><label>Entry Fee</label><input id="mf-entry_fee" type="number" value="${s.entry_fee??''}"></div>
+      <div class="field"><label>Prize Pool</label><input id="mf-prize_pool" type="number" value="${s.prize_pool??''}"></div>
+      <div class="field"><label>Max Players per Slot</label><input id="mf-max_players" type="number" value="${s.max_players??''}"></div>
+      <div class="field"><label>Squad Size</label><input id="mf-squad_size" type="number" value="${s.squad_size??''}"></div>
+      <div class="field"><label>First Match Time</label><input id="mf-first_time" type="time" value="${times[0]||''}"></div>
+      <div class="field"><label>Last Match Time</label><input id="mf-last_time" type="time" value="${times[times.length-1]||''}"></div>
+      <div class="field"><label>Every</label><select id="mf-interval"><option value="15">15 min</option><option value="20">20 min</option><option value="30" selected>30 min</option><option value="45">45 min</option><option value="60">60 min</option></select></div>
+      <div class="field"><label>Active</label><select id="mf-is_active"><option value="true">true</option><option value="false">false</option></select></div>
+    </div>
+    <div class="hint" style="margin-top:8px;">Leave First/Last Match Time blank to keep the existing ${times.length} match times unchanged.</div>
+    <div id="modalMsg"></div>
+    <div class="actionsBar">
+      <button class="btn btn-primary" style="width:auto;" id="modalSubmitBtn">Save</button>
+      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+    </div>
+    <div id="modalResult"></div>
+  `;
+  document.getElementById('modalSubmitBtn').onclick = async ()=>{
+    const body = {};
+    const entryFee = document.getElementById('mf-entry_fee').value;
+    if(entryFee!=='') body.entry_fee = Number(entryFee);
+    const prizePool = document.getElementById('mf-prize_pool').value;
+    if(prizePool!=='') body.prize_pool = Number(prizePool);
+    const maxPlayers = document.getElementById('mf-max_players').value;
+    if(maxPlayers!=='') body.max_players = Number(maxPlayers);
+    const squadSize = document.getElementById('mf-squad_size').value;
+    if(squadSize!=='') body.squad_size = Number(squadSize);
+    const isActive = document.getElementById('mf-is_active').value;
+    body.is_active = isActive === 'true';
+    const first_time = document.getElementById('mf-first_time').value;
+    const last_time = document.getElementById('mf-last_time').value;
+    const interval = Number(document.getElementById('mf-interval').value);
+    if(first_time && last_time){ body.daily_slot_times = generateSlotTimes(first_time, last_time, interval); }
+    document.getElementById('modalSubmitBtn').disabled = true;
+    document.getElementById('modalMsg').innerHTML = `<div class="loadingRow"><span class="spinner"></span> Working…</div>`;
+    const r = await apiCall('PATCH', `/schedules/${encodeURIComponent(id)}`, {body});
+    document.getElementById('modalSubmitBtn').disabled = false;
+    if(r.ok){
+      document.getElementById('modalMsg').innerHTML = `<div class="banner ok">Done — record updated.</div>`;
+      setTimeout(()=>{ closeModal(); goSection(State.section); }, 900);
+    } else {
+      document.getElementById('modalMsg').innerHTML = `<div class="banner err">${friendlyError(r.data, r.status)}</div>`;
+    }
+  };
+}
+
+function openActionModal(modKey, idx){
+  const mod = MODULES.find(m=>m.key===modKey);
+  const a = mod.actions[idx];
+  if(a.custom){ window[a.custom](); return; }
+  buildModal(a.label, `${mod.label}`, a.fields, async ()=>{
+    const {out, missing} = collectFields(a.fields);
+    if(missing.length){ document.getElementById('modalMsg').innerHTML = `<div class="banner err">Please fill: ${missing.join(', ')}</div>`; return; }
+    let path = a.path;
+    const bodyOut = Object.assign({}, out);
+    a.fields.forEach(f=>{ if(path.includes(':'+f.name)){ path = path.replace(':'+f.name, encodeURIComponent(out[f.name]||'')); delete bodyOut[f.name]; } });
+    document.getElementById('modalSubmitBtn').disabled = true;
+    document.getElementById('modalMsg').innerHTML = `<div class="loadingRow"><span class="spinner"></span> Working…</div>`;
+    const r = await apiCall(a.method, path, {body: (a.method==='GET'?null:bodyOut), query:(a.method==='GET'?bodyOut:{})});
+    document.getElementById('modalSubmitBtn').disabled = false;
+    if(r.ok){
+      document.getElementById('modalMsg').innerHTML = `<div class="banner ok">Done — request completed successfully.</div>`;
+      if(a.resultAsCard){ renderResultCard(r.data); }
+      else if(a.resultAsTable){ renderResultTable(r.data, a.columns); }
+      else { setTimeout(()=>{ closeModal(); goSection(State.section); }, 900); }
+    } else {
+      document.getElementById('modalMsg').innerHTML = `<div class="banner err">${friendlyError(r.data, r.status)}</div>`;
+    }
+  }, 'Confirm');
+}
+
+function openRowActionModal(modKey, raIdx, id){
+  const mod = MODULES.find(m=>m.key===modKey);
+  const ra = mod.rowActions[raIdx];
+  if(ra.custom){ window[ra.custom](id); return; }
+  const fields = ra.body || [];
+  buildModal(ra.label, `Applies to record #${id}.`, fields, async ()=>{
+    const {out, missing} = collectFields(fields);
+    if(missing.length){ document.getElementById('modalMsg').innerHTML = `<div class="banner err">Please fill: ${missing.join(', ')}</div>`; return; }
+    const path = ra.path.replace(':id', encodeURIComponent(id));
+    document.getElementById('modalSubmitBtn').disabled = true;
+    document.getElementById('modalMsg').innerHTML = `<div class="loadingRow"><span class="spinner"></span> Working…</div>`;
+    const r = await apiCall(ra.method, path, {body: (ra.method==='GET'?null:out)});
+    document.getElementById('modalSubmitBtn').disabled = false;
+    if(r.ok){
+      document.getElementById('modalMsg').innerHTML = `<div class="banner ok">Done — record updated.</div>`;
+      setTimeout(()=>{ closeModal(); goSection(State.section); }, 900);
+    } else {
+      document.getElementById('modalMsg').innerHTML = `<div class="banner err">${friendlyError(r.data, r.status)}</div>`;
+    }
+  }, 'Confirm');
+}
+
+function renderResultCard(data){
+  const d = data.data || data;
+  const entries = Object.entries(d).filter(([k,v])=>typeof v!=='object');
+  document.getElementById('modalResult').innerHTML = `
+    <div class="hint" style="margin-top:14px;font-weight:700;">Result</div>
+    <dl class="kvGrid" style="margin-top:10px;">
+      ${entries.map(([k,v])=>`<dt>${k}</dt><dd>${v==null?'—':String(v)}</dd>`).join('')}
+    </dl>`;
+}
+function renderResultTable(data, columns){
+  const items = extractItems(data);
+  if(!items.length){ document.getElementById('modalResult').innerHTML = `<div class="empty">No records found.</div>`; return; }
+  let html = `<div class="tableWrap" style="margin-top:14px;"><table class="dataTable"><thead><tr>${columns.map(c=>`<th>${c.label}</th>`).join('')}</tr></thead><tbody>`;
+  items.forEach(row=>{
+    html += '<tr>' + columns.map(c=>{
+      let v = row[c.key];
+      if(v==null) return '<td class="cellMuted">—</td>';
+      return `<td>${c.fmt ? c.fmt(v) : String(v)}</td>`;
+    }).join('') + '</tr>';
+  });
+  html += '</tbody></table></div>';
+  document.getElementById('modalResult').innerHTML = html;
+}
+
+/* ============================================================
+   BOOTSTRAP — must run after MODULES/buildNav/goSection are all
+   defined above, otherwise a page load with a stored token throws
+   "Cannot access 'MODULES' before initialization" and the whole
+   script dies before the sidebar ever renders.
+============================================================ */
+if(State.accessToken){ enterApp(); }
+</script>
+</body>
+</html>
