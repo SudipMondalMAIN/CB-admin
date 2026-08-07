@@ -413,6 +413,23 @@ function toast(msg, type='ok'){
 }
 function escapeHtml(s){ return String(s??'').replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
 
+/* ---------------------------- BUTTON LOADING STATE ---------------------------- */
+async function withLoading(btn, fn){
+  if(!btn || btn.dataset.loading==='1') return;
+  btn.dataset.loading = '1';
+  btn.dataset.origHtml = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin"></span> ' + btn.innerHTML;
+  try{
+    return await fn();
+  } finally {
+    btn.disabled = false;
+    if(btn.dataset.origHtml !== undefined) btn.innerHTML = btn.dataset.origHtml;
+    delete btn.dataset.loading;
+    delete btn.dataset.origHtml;
+  }
+}
+
 /* ---------------------------- API CLIENT ---------------------------- */
 let refreshingPromise = null;
 async function api(path, opts={}){
@@ -518,6 +535,7 @@ const NAV = [
     {id:'wallet', label:'Wallet', ic:'💳'},
     {id:'social', label:'Social', ic:'💬'},
     {id:'notifications', label:'Notifications', ic:'🔔'},
+    {id:'reports', label:'Reports & Appeals', ic:'🚩'},
     {id:'profile', label:'Profile', ic:'⚙'},
   ]},
 ];
@@ -540,7 +558,7 @@ function closeSidebarMobile(){ document.getElementById('sidebar').classList.remo
 document.getElementById('hamburgerBtn').addEventListener('click', ()=>{ document.getElementById('sidebar').classList.toggle('open'); document.getElementById('scrim').classList.toggle('show'); });
 document.getElementById('scrim').addEventListener('click', closeSidebarMobile);
 
-const PAGE_TITLES = {dashboard:'Dashboard', tournaments:'Tournaments', registrations:'My Registrations', teams:'My Teams', matches:'Matches', live:'Live Now', leaderboard:'Leaderboard', achievements:'Achievements', wallet:'Wallet', social:'Social', notifications:'Notifications', profile:'Profile & Settings'};
+const PAGE_TITLES = {dashboard:'Dashboard', tournaments:'Tournaments', registrations:'My Registrations', teams:'My Teams', matches:'Matches', live:'Live Now', leaderboard:'Leaderboard', achievements:'Achievements', wallet:'Wallet', social:'Social', notifications:'Notifications', reports:'Reports & Appeals', profile:'Profile & Settings'};
 const PAGE_RENDERERS = {};
 
 function goPage(id){
@@ -729,6 +747,7 @@ async function ensureGameProfiles(){
   return state.gameProfiles;
 }
 function gameName(id){ const g = state.games.find(x=>x.id===id); return g? g.name : '—'; }
+function modeLabel(m){ return m==='solo' ? 'Solo' : 'Squad'; }
 
 /* ======================================================================
    PAGE: DASHBOARD
@@ -838,7 +857,7 @@ async function loadTournaments(){
               <div class="tour-title mt-6">${escapeHtml(t.title)}</div>
               <div class="tour-meta">
                 <span>🎮 ${escapeHtml(gameName(t.game_id))}</span>
-                <span>👥 ${t.registration_mode}</span>
+                <span>👥 ${modeLabel(t.registration_mode)}</span>
                 <span>${t.current_players}/${t.max_players} players</span>
               </div>
             </div>
@@ -887,7 +906,7 @@ async function openTournamentDetail(id){
         <div class="glass-soft" style="padding:12px;"><div class="eyebrow">Prize pool</div><div style="font-family:var(--font-display);font-weight:800;color:var(--accent-3);font-size:16px;">${fmtMoney(t.prize_pool)}</div></div>
         <div class="glass-soft" style="padding:12px;"><div class="eyebrow">Entry fee</div><div style="font-family:var(--font-display);font-weight:800;font-size:16px;">${fmtMoney(t.entry_fee)}</div></div>
         <div class="glass-soft" style="padding:12px;"><div class="eyebrow">Slots</div><div style="font-family:var(--font-display);font-weight:800;font-size:16px;">${t.current_players}/${t.max_players}</div></div>
-        <div class="glass-soft" style="padding:12px;"><div class="eyebrow">Mode</div><div style="font-family:var(--font-display);font-weight:800;font-size:16px;text-transform:capitalize;">${t.registration_mode.replace('_',' ')}</div></div>
+        <div class="glass-soft" style="padding:12px;"><div class="eyebrow">Mode</div><div style="font-family:var(--font-display);font-weight:800;font-size:16px;text-transform:capitalize;">${modeLabel(t.registration_mode)}</div></div>
       </div>
       ${t.description? `<p>${escapeHtml(t.description)}</p>`:''}
       ${t.rules? `<div class="mt-14"><div class="eyebrow mb-10">Rules</div><p style="white-space:pre-wrap;">${escapeHtml(t.rules)}</p></div>`:''}
@@ -895,7 +914,7 @@ async function openTournamentDetail(id){
       <div id="regAction"></div>
       <div class="divider"></div>
       <div class="flex gap-10 flex-wrap" style="flex-wrap:wrap;">
-        ${isTeam? `<button class="btn btn-ghost btn-sm" onclick="openTournamentTeams('${t.id}','${escapeHtml(t.title)}','${t.game_id}')">View teams</button>`:''}
+        ${isTeam && t.registration_mode!=='auto_random'? `<button class="btn btn-ghost btn-sm" onclick="openTournamentTeams('${t.id}','${escapeHtml(t.title)}','${t.game_id}')">View teams</button>`:''}
         <button class="btn btn-ghost btn-sm" onclick="openPrizePool('${t.id}')">Prize breakdown</button>
       </div>
       <div class="divider"></div>
@@ -933,7 +952,7 @@ function renderRegAction(t, myReg, isTeam){
     box.innerHTML = `
       <div class="glass-soft" style="padding:16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
         <div><div style="font-weight:700;">You're registered</div><div class="muted" style="font-size:12.5px;">Status: ${myReg.status} · Payment: ${myReg.payment_status}${myReg.team_name?' · Team: '+escapeHtml(myReg.team_name):''}</div></div>
-        ${t.status==='scheduled' ? `<button class="btn btn-danger btn-sm" onclick="cancelRegistration('${t.id}')">Cancel registration</button>` : ''}
+        ${t.status==='scheduled' ? `<button class="btn btn-danger btn-sm" onclick="withLoading(this, ()=>cancelRegistration('${t.id}'))">Cancel registration</button>` : ''}
       </div>`;
     return;
   }
@@ -942,7 +961,16 @@ function renderRegAction(t, myReg, isTeam){
     return;
   }
   if(isTeam){
-    box.innerHTML = `
+    const isAutoRandom = t.registration_mode === 'auto_random';
+    box.innerHTML = isAutoRandom ? `
+      <div class="glass-soft" style="padding:16px;">
+        <div class="muted mb-14" style="font-size:12.5px;">This is a squad slot — create your own team (you'll get an invite code to share with friends), join a friend's team with their code, or get randomly matched with other solo joiners.</div>
+        <div class="flex gap-10 flex-wrap">
+          <button class="btn btn-primary btn-sm" onclick="openSlotCreateTeam('${t.id}','${t.game_id}')">Create a team — ${fmtMoney(t.entry_fee)} entry</button>
+          <button class="btn btn-ghost btn-sm" onclick="openSlotJoinTeam('${t.id}','${t.game_id}')">Join with invite code</button>
+          <button class="btn btn-ghost btn-sm" onclick="withLoading(this, ()=>slotJoinRandom('${t.id}','${t.game_id}'))">Quick match (random)</button>
+        </div>
+      </div>` : `
       <div class="glass-soft" style="padding:16px;">
         <div class="muted mb-14" style="font-size:12.5px;">This is a squad tournament — create your own team (you'll get an invite code to share) or join a teammate's team with their code.</div>
         <div class="flex gap-10 flex-wrap">
@@ -953,7 +981,7 @@ function renderRegAction(t, myReg, isTeam){
     return;
   }
   box.innerHTML = `
-    <button class="btn btn-primary btn-block" onclick="startRegistration('${t.id}')">
+    <button class="btn btn-primary btn-block" onclick="withLoading(this, ()=>startRegistration('${t.id}'))">
       Register now — ${fmtMoney(t.entry_fee)} entry
     </button>`;
 }
@@ -976,7 +1004,7 @@ async function startRegistration(tid){
       <div class="field"><label>Game profile</label>
         <select id="regProfileSel">${opts.map(o=>`<option value="${o.id}">${escapeHtml(o.ign||o.player_id||o.id)}</option>`).join('')}</select>
       </div>
-      <button class="btn btn-primary btn-block" onclick="submitRegistration('${tid}')">Confirm registration — ${fmtMoney(t.entry_fee)}</button>
+      <button class="btn btn-primary btn-block" onclick="withLoading(this, ()=>submitRegistration('${tid}'))">Confirm registration — ${fmtMoney(t.entry_fee)}</button>
     </div>`;
 }
 async function submitRegistration(tid){
@@ -1035,7 +1063,7 @@ async function openCreateTeam(tid, gameId){
     <div class="modal-head"><h3>Create a team</h3><button class="modal-close" onclick="closeModal()">✕</button></div>
     <div class="field"><label>Game profile</label><select id="ctProfile">${opts.map(o=>`<option value="${o.id}">${escapeHtml(o.ign||o.player_id||o.id)}</option>`).join('')}</select></div>
     <div class="field"><label>Team name (optional)</label><input id="ctName" placeholder="Leave blank for a random name"></div>
-    <button class="btn btn-primary btn-block" onclick="createTeam('${tid}')">Create team</button>
+    <button class="btn btn-primary btn-block" onclick="withLoading(this, ()=>createTeam('${tid}'))">Create team</button>
   `);
 }
 async function createTeam(tid){
@@ -1058,7 +1086,7 @@ async function openJoinTeam(tid, gameId){
     <div class="modal-head"><h3>Join with invite code</h3><button class="modal-close" onclick="closeModal()">✕</button></div>
     <div class="field"><label>Game profile</label><select id="jtProfile">${opts.map(o=>`<option value="${o.id}">${escapeHtml(o.ign||o.player_id||o.id)}</option>`).join('')}</select></div>
     <div class="field"><label>Invite code</label><input id="jtCode" placeholder="Enter code" style="text-transform:uppercase;"></div>
-    <button class="btn btn-primary btn-block" onclick="joinTeam('${tid}')">Join team</button>
+    <button class="btn btn-primary btn-block" onclick="withLoading(this, ()=>joinTeam('${tid}'))">Join team</button>
   `);
 }
 async function joinTeam(tid){
@@ -1067,6 +1095,82 @@ async function joinTeam(tid){
   if(!code) return toast('Enter an invite code','err');
   try{ const team = await api('/tournaments/'+tid+'/teams/join', {method:'POST', body:{invite_code:code, game_profile_id:profileId}}); toast('Joined team!'); openTeamDetail(team.id); }
   catch(e){ toast(e.message,'err'); }
+}
+
+/* ---- Squad slot join (schedule-generated auto_random tournaments) ----
+   Uses TournamentTeam via /tournaments/{id}/join/team, NOT the
+   TEAM_INVITE-only /tournaments/{id}/teams endpoints above. */
+function renderSlotTeamResult(team){
+  return `
+    <div class="glass-soft" style="padding:16px;">
+      <div style="font-weight:700;margin-bottom:6px;">${escapeHtml(team.team_name||'Your squad')}</div>
+      <div class="muted" style="font-size:12.5px;margin-bottom:10px;">${team.status==='locked'?'Team full — you\'re in!':'Waiting for more members to join'}</div>
+      <div class="mono" style="font-size:13px;margin-bottom:10px;">${team.current_members}/${team.team_size} members · ${team.team_format}</div>
+      <div class="copy-field"><input readonly value="${escapeHtml(team.invite_code)}"><button class="btn btn-sm" onclick="navigator.clipboard.writeText('${escapeHtml(team.invite_code)}');toast('Invite code copied')">Copy</button></div>
+      <div class="muted mt-10" style="font-size:11.5px;">Share this code with friends so they can join the same squad.</div>
+    </div>`;
+}
+async function openSlotCreateTeam(tid, gameId){
+  await ensureGameProfiles();
+  const opts = gameId? state.gameProfiles.filter(p=>p.game_id===gameId) : state.gameProfiles;
+  if(!opts.length){
+    openModal(`<div class="modal-head"><h3>Create a team</h3><button class="modal-close" onclick="closeModal()">✕</button></div>
+    <div class="glass-soft" style="padding:16px;">You need a game profile for this tournament's game before creating a team. <a style="color:var(--accent-3);cursor:pointer;" onclick="closeModal();goPage('profile')">Add one in Profile →</a></div>`);
+    return;
+  }
+  openModal(`
+    <div class="modal-head"><h3>Create a team</h3><button class="modal-close" onclick="closeModal()">✕</button></div>
+    <div class="field"><label>Game profile</label><select id="sctProfile">${opts.map(o=>`<option value="${o.id}">${escapeHtml(o.ign||o.player_id||o.id)}</option>`).join('')}</select></div>
+    <button class="btn btn-primary btn-block" onclick="withLoading(this, ()=>slotCreateTeam('${tid}'))">Create team</button>
+  `);
+}
+async function slotCreateTeam(tid){
+  const profileId = document.getElementById('sctProfile').value;
+  try{
+    const team = await api('/tournaments/'+tid+'/join/team', {method:'POST', body:{game_profile_id:profileId}});
+    openModal(`<div class="modal-head"><h3>Team created</h3><button class="modal-close" onclick="closeModal()">✕</button></div>${renderSlotTeamResult(team)}`);
+    toast('Team created!');
+  }catch(e){ toast(e.message,'err'); }
+}
+async function openSlotJoinTeam(tid, gameId){
+  await ensureGameProfiles();
+  const opts = gameId? state.gameProfiles.filter(p=>p.game_id===gameId) : state.gameProfiles;
+  if(!opts.length){
+    openModal(`<div class="modal-head"><h3>Join with invite code</h3><button class="modal-close" onclick="closeModal()">✕</button></div>
+    <div class="glass-soft" style="padding:16px;">You need a game profile for this tournament's game before joining a team. <a style="color:var(--accent-3);cursor:pointer;" onclick="closeModal();goPage('profile')">Add one in Profile →</a></div>`);
+    return;
+  }
+  openModal(`
+    <div class="modal-head"><h3>Join with invite code</h3><button class="modal-close" onclick="closeModal()">✕</button></div>
+    <div class="field"><label>Game profile</label><select id="sjtProfile">${opts.map(o=>`<option value="${o.id}">${escapeHtml(o.ign||o.player_id||o.id)}</option>`).join('')}</select></div>
+    <div class="field"><label>Invite code</label><input id="sjtCode" placeholder="Enter code" style="text-transform:uppercase;"></div>
+    <button class="btn btn-primary btn-block" onclick="withLoading(this, ()=>slotJoinTeam('${tid}'))">Join team</button>
+  `);
+}
+async function slotJoinTeam(tid){
+  const code = document.getElementById('sjtCode').value.trim();
+  const profileId = document.getElementById('sjtProfile').value;
+  if(!code) return toast('Enter an invite code','err');
+  try{
+    const team = await api('/tournaments/'+tid+'/join/team', {method:'POST', body:{invite_code:code, game_profile_id:profileId}});
+    openModal(`<div class="modal-head"><h3>Joined team</h3><button class="modal-close" onclick="closeModal()">✕</button></div>${renderSlotTeamResult(team)}`);
+    toast('Joined team!');
+  }catch(e){ toast(e.message,'err'); }
+}
+async function slotJoinRandom(tid, gameId){
+  await ensureGameProfiles();
+  const opts = gameId? state.gameProfiles.filter(p=>p.game_id===gameId) : state.gameProfiles;
+  if(!opts.length){
+    openModal(`<div class="modal-head"><h3>Quick match</h3><button class="modal-close" onclick="closeModal()">✕</button></div>
+    <div class="glass-soft" style="padding:16px;">You need a game profile for this tournament's game first. <a style="color:var(--accent-3);cursor:pointer;" onclick="closeModal();goPage('profile')">Add one in Profile →</a></div>`);
+    return;
+  }
+  const profileId = opts[0].id;
+  try{
+    const team = await api('/tournaments/'+tid+'/join/team', {method:'POST', body:{game_profile_id:profileId, join_random:true}});
+    openModal(`<div class="modal-head"><h3>Matched!</h3><button class="modal-close" onclick="closeModal()">✕</button></div>${renderSlotTeamResult(team)}`);
+    toast('Joined a squad!');
+  }catch(e){ toast(e.message,'err'); }
 }
 
 /* ======================================================================
@@ -1141,8 +1245,8 @@ async function openTeamDetail(teamId){
       </tbody></table></div>
       <div class="divider"></div>
       <div class="flex gap-10 flex-wrap">
-        <button class="btn btn-danger btn-sm" onclick="leaveTeam('${teamId}')">Leave team</button>
-        ${isCaptain? `<button class="btn btn-ghost btn-sm" onclick="toggleTeamLock('${teamId}', ${!team.is_locked})">${team.is_locked?'Unlock':'Lock'} team</button>`:''}
+        <button class="btn btn-danger btn-sm" onclick="withLoading(this, ()=>leaveTeam('${teamId}'))">Leave team</button>
+        ${isCaptain? `<button class="btn btn-ghost btn-sm" onclick="withLoading(this, ()=>toggleTeamLock('${teamId}', ${!team.is_locked}))">${team.is_locked?'Unlock':'Lock'} team</button>`:''}
       </div>
     `);
   }catch(e){ toast(e.message,'err'); }
@@ -1302,13 +1406,13 @@ async function loadWalletTab(tab){
       </tbody></table></div>` : emptyWallet('No transactions yet');
     } else if(tab==='dep'){
       const r = await api('/payments/deposits?page=1&page_size=30');
-      body.innerHTML = r.items.length ? `<div class="table-wrap"><table><thead><tr><th>Amount</th><th>Status</th><th>Date</th><th></th></tr></thead><tbody>
-        ${r.items.map(d=>`<tr><td>${fmtMoney(d.amount)}</td><td><span class="badge ${statusBadgeClass(d.status)}">${d.status}</span></td><td class="muted">${fmtDateShort(d.submitted_at)}</td><td>${d.status==='pending'?`<button class="btn btn-sm btn-danger" onclick="cancelDeposit('${d.id}')">Cancel</button>`:''}</td></tr>`).join('')}
+      body.innerHTML = r.items.length ? `<div class="table-wrap"><table><thead><tr><th>TXN ID</th><th>Amount</th><th>Status</th><th>Date</th><th></th></tr></thead><tbody>
+        ${r.items.map(d=>`<tr><td class="mono">${d.txn_no}</td><td>${fmtMoney(d.amount)}</td><td><span class="badge ${statusBadgeClass(d.status)}">${d.status}</span></td><td class="muted">${fmtDateShort(d.submitted_at)}</td><td>${d.status==='pending'?`<button class="btn btn-sm btn-danger" onclick="withLoading(this, ()=>cancelDeposit('${d.id}'))">Cancel</button>`:''}</td></tr>`).join('')}
       </tbody></table></div>` : emptyWallet('No deposit requests yet');
     } else if(tab==='wd'){
       const r = await api('/withdrawals?page=1&page_size=30');
-      body.innerHTML = r.items.length ? `<div class="table-wrap"><table><thead><tr><th>Amount</th><th>Status</th><th>Date</th><th></th></tr></thead><tbody>
-        ${r.items.map(d=>`<tr><td>${fmtMoney(d.amount)}</td><td><span class="badge ${statusBadgeClass(d.status)}">${d.status}</span></td><td class="muted">${fmtDateShort(d.created_at)}</td><td>${d.status==='pending'?`<button class="btn btn-sm btn-danger" onclick="cancelWithdrawal('${d.id}')">Cancel</button>`:''}</td></tr>`).join('')}
+      body.innerHTML = r.items.length ? `<div class="table-wrap"><table><thead><tr><th>TXN ID</th><th>Amount</th><th>Status</th><th>Date</th><th></th></tr></thead><tbody>
+        ${r.items.map(d=>`<tr><td class="mono">${d.txn_no}</td><td>${fmtMoney(d.amount)}</td><td><span class="badge ${statusBadgeClass(d.status)}">${d.status}</span></td><td class="muted">${fmtDateShort(d.created_at)}</td><td>${d.status==='pending'?`<button class="btn btn-sm btn-danger" onclick="withLoading(this, ()=>cancelWithdrawal('${d.id}'))">Cancel</button>`:''}</td></tr>`).join('')}
       </tbody></table></div>` : emptyWallet('No withdrawal requests yet');
     }
   }catch(e){ body.innerHTML = `<div class="empty-state">⚠ ${escapeHtml(e.message)}</div>`; }
@@ -1323,7 +1427,7 @@ async function openDepositModal(){
   openModal(`
     <div class="modal-head"><h3>Add funds</h3><button class="modal-close" onclick="closeModal()">✕</button></div>
     <div class="field"><label>Amount (₹)</label><input id="depAmount" type="number" min="1" step="0.01" placeholder="500.00"></div>
-    <button class="btn btn-primary btn-block" onclick="getDepositQr()">Get deposit QR</button>
+    <button class="btn btn-primary btn-block" onclick="withLoading(this, ()=>getDepositQr())">Get deposit QR</button>
     <div id="depQrResult" class="mt-14"></div>
   `);
 }
@@ -1340,7 +1444,7 @@ async function getDepositQr(){
       </div>
       <div class="field"><label>UTR / Transaction reference number</label><input id="depUtr" placeholder="e.g. 123456789012"></div>
       <div class="field"><label>Payment screenshot</label><input id="depScreenshot" type="file" accept="image/jpeg,image/png,image/webp"></div>
-      <button class="btn btn-primary btn-block" onclick="submitDeposit(${amount})">Submit deposit request</button>
+      <button class="btn btn-primary btn-block" onclick="withLoading(this, ()=>submitDeposit(${amount}))">Submit deposit request</button>
     `;
   }catch(e){ toast(e.message,'err'); }
 }
@@ -1376,7 +1480,7 @@ async function openWithdrawModal(){
         <select id="wdMethod">${methods.map(m=>`<option value="${m.id}">${escapeHtml(paymentMethodLabel(m))}</option>`).join('')}</select>
       </div>
       <div class="field"><label>Amount (₹)</label><input id="wdAmount" type="number" min="1" step="0.01" placeholder="500.00"></div>
-      <button class="btn btn-primary btn-block" onclick="submitWithdraw()">Request withdrawal</button>
+      <button class="btn btn-primary btn-block" onclick="withLoading(this, ()=>submitWithdraw())">Request withdrawal</button>
     `);
   }catch(e){ toast(e.message,'err'); }
 }
@@ -1396,7 +1500,7 @@ async function openPaymentMethods(){
     const methods = await api('/payment-methods');
     openModal(`
       <div class="modal-head"><h3>Payment methods</h3><button class="modal-close" onclick="closeModal()">✕</button></div>
-      ${methods.length? methods.map(m=>`<div class="list-row"><div class="row-icon">💳</div><div style="flex:1;">${escapeHtml(paymentMethodLabel(m))}</div><button class="btn btn-sm btn-danger" onclick="deletePaymentMethod('${m.id}')">Remove</button></div>`).join(''):'<div class="empty-state">No payment methods saved</div>'}
+      ${methods.length? methods.map(m=>`<div class="list-row"><div class="row-icon">💳</div><div style="flex:1;">${escapeHtml(paymentMethodLabel(m))}</div><button class="btn btn-sm btn-danger" onclick="withLoading(this, ()=>deletePaymentMethod('${m.id}'))">Remove</button></div>`).join(''):'<div class="empty-state">No payment methods saved</div>'}
       <div class="divider"></div>
       <div class="field"><label>Method type</label>
         <select id="pmType" onchange="togglePmFields()">
@@ -1410,7 +1514,7 @@ async function openPaymentMethods(){
         <div class="field"><label>Account number</label><input id="pmAccNum" placeholder="Account number"></div>
         <div class="field"><label>IFSC code</label><input id="pmIfsc" placeholder="e.g. SBIN0001234" style="text-transform:uppercase;"></div>
       </div>
-      <button class="btn btn-primary btn-block" onclick="addPaymentMethod()">Add method</button>
+      <button class="btn btn-primary btn-block" onclick="withLoading(this, ()=>addPaymentMethod())">Add method</button>
     `);
   }catch(e){ toast(e.message,'err'); }
 }
@@ -1460,14 +1564,14 @@ PAGE_RENDERERS.social = async function(el){
   try{
     if(socialTab==='friends'){
       const r = await api('/social/friends?page=1&page_size=40');
-      body.innerHTML = r.items.length? r.items.map(f=>`<div class="list-row"><div class="avatar-mini" style="border-radius:12px;cursor:pointer;" onclick="viewPlayerProfile('${f.id}')">${initials(f.full_name)}</div><div style="flex:1;cursor:pointer;" onclick="viewPlayerProfile('${f.id}')">${escapeHtml(f.full_name||f.player_uid)}</div><button class="btn btn-sm btn-danger" onclick="removeFriend('${f.id||f.user_id}')">Remove</button></div>`).join('') : `<div class="empty-state"><div class="ic">👋</div>No friends yet</div>`;
+      body.innerHTML = r.items.length? r.items.map(f=>`<div class="list-row"><div class="avatar-mini" style="border-radius:12px;cursor:pointer;" onclick="viewPlayerProfile('${f.id}')">${initials(f.full_name)}</div><div style="flex:1;cursor:pointer;" onclick="viewPlayerProfile('${f.id}')">${escapeHtml(f.full_name||f.player_uid)}</div><button class="btn btn-sm btn-danger" onclick="withLoading(this, ()=>removeFriend('${f.id||f.user_id}'))">Remove</button></div>`).join('') : `<div class="empty-state"><div class="ic">👋</div>No friends yet</div>`;
     } else if(socialTab==='incoming'){
       const r = await api('/social/friends/requests/incoming');
       body.innerHTML = r.length? r.map(f=>{
         const name = f.requester? (f.requester.full_name || f.requester.player_uid) : 'Player';
         const uid = f.requester? f.requester.player_uid : '';
         const reqUserId = f.requester_id;
-        return `<div class="list-row"><div class="avatar-mini" style="border-radius:12px;cursor:pointer;" onclick="viewPlayerProfile('${reqUserId}')">${initials(name)}</div><div style="flex:1;cursor:pointer;" onclick="viewPlayerProfile('${reqUserId}')"><div>${escapeHtml(name)}</div>${uid?`<div class="muted mono" style="font-size:11px;">${escapeHtml(uid)}</div>`:''}</div><div class="flex gap-8"><button class="btn btn-sm btn-primary" onclick="respondFriend('${f.id}',true)">Accept</button><button class="btn btn-sm btn-ghost" onclick="respondFriend('${f.id}',false)">Decline</button></div></div>`;
+        return `<div class="list-row"><div class="avatar-mini" style="border-radius:12px;cursor:pointer;" onclick="viewPlayerProfile('${reqUserId}')">${initials(name)}</div><div style="flex:1;cursor:pointer;" onclick="viewPlayerProfile('${reqUserId}')"><div>${escapeHtml(name)}</div>${uid?`<div class="muted mono" style="font-size:11px;">${escapeHtml(uid)}</div>`:''}</div><div class="flex gap-8"><button class="btn btn-sm btn-primary" onclick="withLoading(this, ()=>respondFriend('${f.id}',true))">Accept</button><button class="btn btn-sm btn-ghost" onclick="withLoading(this, ()=>respondFriend('${f.id}',false))">Decline</button></div></div>`;
       }).join('') : `<div class="empty-state"><div class="ic">📭</div>No pending requests</div>`;
     } else if(socialTab==='search'){
       body.innerHTML = `<div class="field"><input id="socSearchInput" placeholder="Search players by name or UID…"></div><div id="socSearchResults"></div>`;
@@ -1490,7 +1594,7 @@ async function doSocialSearch(q){
       const rel = p.relationship_status;
       const actionBtn = rel==='friend' ? `<span class="muted" style="font-size:12px;">Friends</span>`
         : rel==='pending' ? `<span class="muted" style="font-size:12px;">Pending</span>`
-        : `<button class="btn btn-sm btn-primary" onclick="event.stopPropagation();sendFriendReq('${targetUserId}')">Add friend</button>`;
+        : `<button class="btn btn-sm btn-primary" onclick="event.stopPropagation();withLoading(this, ()=>sendFriendReq('${targetUserId}'))">Add friend</button>`;
       return `<div class="list-row" style="cursor:pointer;" onclick="viewPlayerProfile('${targetUserId}')"><div class="avatar-mini" style="border-radius:12px;">${initials(name)}</div><div style="flex:1;"><div>${escapeHtml(name)}</div>${uid?`<div class="muted mono" style="font-size:11px;">${escapeHtml(uid)}</div>`:''}</div>${actionBtn}</div>`;
     }).join('') : `<div class="empty-state">No players found</div>`;
   }catch(e){ out.innerHTML = `<div class="empty-state">⚠ ${escapeHtml(e.message)}</div>`; }
@@ -1507,7 +1611,7 @@ async function viewPlayerProfile(userId){
     const relBadge = rel==='self' ? '' : rel==='friend' ? `<span class="muted" style="font-size:12px;">✓ Friends</span>`
       : rel==='pending' ? `<span class="muted" style="font-size:12px;">Request pending</span>`
       : rel==='blocked' ? `<span class="muted" style="font-size:12px;">Blocked</span>`
-      : `<button class="btn btn-sm btn-primary" onclick="sendFriendReq('${userId}')">Add friend</button>`;
+      : `<button class="btn btn-sm btn-primary" onclick="withLoading(this, ()=>sendFriendReq('${userId}'))">Add friend</button>`;
     openModal(`
       <div class="modal-head"><h3>${escapeHtml(name)}</h3><button class="modal-close" onclick="closeModal()">✕</button></div>
       <div style="display:flex;align-items:center;gap:14px;margin-bottom:16px;">
@@ -1541,7 +1645,7 @@ PAGE_RENDERERS.notifications = async function(el){
     <div class="section-title">
       <div></div>
       <div class="flex gap-8">
-        <button class="btn btn-sm btn-ghost" onclick="markAllRead()">Mark all read</button>
+        <button class="btn btn-sm btn-ghost" onclick="withLoading(this, ()=>markAllRead())">Mark all read</button>
         <button class="btn btn-sm btn-ghost" onclick="openNotifPrefs()">Preferences</button>
       </div>
     </div>
@@ -1560,7 +1664,7 @@ async function loadNotifList(){
           <div class="muted" style="font-size:12px;">${escapeHtml(n.body||'')}</div>
           <div class="muted" style="font-size:11px;margin-top:2px;">${timeAgo(n.created_at)}</div>
         </div>
-        <button class="btn btn-sm btn-ghost" onclick="event.stopPropagation();deleteNotif('${n.id}')">✕</button>
+        <button class="btn btn-sm btn-ghost" onclick="event.stopPropagation();withLoading(this, ()=>deleteNotif('${n.id}'))">✕</button>
       </div>`).join('') : `<div class="empty-state"><div class="ic">🔔</div>No notifications</div>`;
     refreshUnreadBadge();
   }catch(e){ el.innerHTML = `<div class="empty-state">⚠ ${escapeHtml(e.message)}</div>`; }
@@ -1587,7 +1691,7 @@ async function openNotifPrefs(){
       <div class="modal-head"><h3>Notification preferences</h3><button class="modal-close" onclick="closeModal()">✕</button></div>
       <div class="list-row"><div style="flex:1;">In-app notifications</div><input type="checkbox" id="prefInApp" ${p.in_app_enabled?'checked':''}></div>
       <div class="list-row"><div style="flex:1;">Push notifications</div><input type="checkbox" id="prefPush" ${p.push_enabled?'checked':''}></div>
-      <button class="btn btn-primary btn-block mt-14" onclick="saveNotifPrefs()">Save preferences</button>
+      <button class="btn btn-primary btn-block mt-14" onclick="withLoading(this, ()=>saveNotifPrefs())">Save preferences</button>
     `);
   }catch(e){ toast(e.message,'err'); }
 }
@@ -1595,6 +1699,237 @@ async function saveNotifPrefs(){
   const body = {in_app_enabled: document.getElementById('prefInApp').checked, push_enabled: document.getElementById('prefPush').checked};
   try{ await api('/notifications/preferences', {method:'PUT', body}); toast('Preferences saved'); closeModal(); }
   catch(e){ toast(e.message,'err'); }
+}
+
+/* ======================================================================
+   PAGE: REPORTS & APPEALS
+   ====================================================================== */
+const REPORT_REASONS = [
+  ['cheating','Cheating'], ['harassment','Harassment'], ['abusive_language','Abusive language'],
+  ['no_show','No show'], ['match_fixing','Match fixing'], ['impersonation','Impersonation'],
+  ['spam','Spam'], ['other','Other'],
+];
+function reportStatusBadge(status){
+  const s=(status||'').toLowerCase();
+  const cls = s==='pending' ? 'badge-open' : s==='under_review' ? 'badge-featured' : s==='resolved' || s==='approved' ? 'badge-completed' : s==='dismissed' || s==='rejected' ? 'badge-cancelled' : 'badge-closed';
+  return `<span class="badge ${cls}">${escapeHtml(status.replace(/_/g,' '))}</span>`;
+}
+let reportsTab = 'reports';
+PAGE_RENDERERS.reports = async function(el){
+  el.innerHTML = `
+    <div class="flex gap-10 mb-18" style="justify-content:space-between;flex-wrap:wrap;">
+      <div class="pill-tabs" id="repTabs">
+        <div class="pill-tab ${reportsTab==='reports'?'active':''}" data-t="reports">My Reports</div>
+        <div class="pill-tab ${reportsTab==='appeals'?'active':''}" data-t="appeals">My Appeals & Actions</div>
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="openFileReportModal()">🚩 File a report</button>
+    </div>
+    <div class="glass card" id="repBody"><div class="skeleton" style="height:260px;"></div></div>`;
+  const tabs = document.getElementById('repTabs');
+  tabs.addEventListener('click', e=>{ const t=e.target.closest('.pill-tab'); if(!t) return; reportsTab=t.dataset.t; PAGE_RENDERERS.reports(el); });
+  loadReportsTab();
+};
+async function loadReportsTab(){
+  const body = document.getElementById('repBody'); if(!body) return;
+  body.innerHTML = `<div class="skeleton" style="height:260px;"></div>`;
+  try{
+    if(reportsTab==='reports'){
+      const r = await api('/reports/me');
+      const items = r.items || [];
+      body.innerHTML = items.length ? items.map(rep=>`
+        <div class="list-row">
+          <div class="row-icon">🚩</div>
+          <div style="flex:1;">
+            <div style="font-weight:700;font-size:13.5px;">#${rep.short_id} — ${escapeHtml(rep.target_type)} · ${escapeHtml(rep.reason.replace(/_/g,' '))}</div>
+            <div class="muted" style="font-size:11.5px;margin-top:2px;">${escapeHtml(rep.description||'No description')}</div>
+            <div class="muted" style="font-size:11px;margin-top:4px;">${fmtDate(rep.created_at)}${rep.resolution_notes?' · '+escapeHtml(rep.resolution_notes):''}</div>
+          </div>
+          ${reportStatusBadge(rep.status)}
+        </div>`).join('') : `<div class="empty-state"><div class="ic">🚩</div>No reports filed yet</div>`;
+    } else {
+      const [actions, appeals] = await Promise.all([
+        api(`/users/${state.user.id}/moderation-actions`),
+        api('/appeals/me'),
+      ]);
+      const appealedActionIds = new Set(appeals.map(a=>a.moderation_action_id));
+      const actionsHtml = actions.length ? `
+        <div class="muted" style="font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px;">Moderation actions on your account</div>
+        ${actions.map(a=>`
+          <div class="list-row">
+            <div class="row-icon">${a.action_type==='ban'?'⛔':a.action_type==='suspension'?'⏸':'⚠'}</div>
+            <div style="flex:1;">
+              <div style="font-weight:700;font-size:13.5px;text-transform:capitalize;">${escapeHtml(a.action_type)} <span class="muted" style="font-weight:500;">#${a.short_id}</span></div>
+              <div class="muted" style="font-size:11.5px;margin-top:2px;">${escapeHtml(a.reason)}</div>
+              <div class="muted" style="font-size:11px;margin-top:4px;">${fmtDate(a.created_at)}${a.expires_at?' · Expires '+fmtDate(a.expires_at):''}</div>
+            </div>
+            ${a.status==='active' && !appealedActionIds.has(a.id) ? `<button class="btn btn-sm btn-ghost" onclick="openFileAppealModal('${a.id}')">File appeal</button>` : reportStatusBadge(a.status)}
+          </div>`).join('')}
+      ` : '';
+      const appealsHtml = appeals.length ? `
+        <div class="muted" style="font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin:${actions.length?'18px':'0'} 0 10px;">Your appeals</div>
+        ${appeals.map(ap=>`
+          <div class="list-row">
+            <div class="row-icon">📝</div>
+            <div style="flex:1;">
+              <div style="font-weight:700;font-size:13.5px;">${escapeHtml(ap.message)}</div>
+              <div class="muted" style="font-size:11px;margin-top:4px;">${fmtDate(ap.created_at)}${ap.review_notes?' · '+escapeHtml(ap.review_notes):''}</div>
+            </div>
+            ${reportStatusBadge(ap.status)}
+          </div>`).join('')}
+      ` : '';
+      body.innerHTML = (actionsHtml + appealsHtml) || `<div class="empty-state"><div class="ic">📝</div>No moderation actions or appeals on your account</div>`;
+    }
+  }catch(e){ body.innerHTML = `<div class="empty-state">⚠ ${escapeHtml(e.message)}</div>`; }
+}
+let repSelectedTarget = null; // { id, label }
+let repSearchDebounce = null;
+function openFileReportModal(){
+  repSelectedTarget = null;
+  openModal(`
+    <div class="modal-head"><h3>File a report</h3><button class="modal-close" onclick="closeModal()">✕</button></div>
+    <div class="field"><label>What are you reporting?</label>
+      <select id="repTargetType" onchange="onRepTargetTypeChange()">
+        <option value="player">A player</option>
+        <option value="tournament">A tournament</option>
+        <option value="team">A team</option>
+      </select>
+    </div>
+    <div id="repTargetPicker"></div>
+    <div class="field"><label>Reason</label>
+      <select id="repReason">${REPORT_REASONS.map(([v,l])=>`<option value="${v}">${l}</option>`).join('')}</select>
+    </div>
+    <div class="field"><label>Description (optional)</label><textarea id="repDesc" rows="4" placeholder="Give as much detail as you can…" maxlength="2000"></textarea></div>
+    <div class="field"><label>Evidence links (optional, comma-separated)</label><input id="repEvidence" placeholder="https://…, https://…"></div>
+    <button class="btn btn-primary btn-block" onclick="withLoading(this, ()=>submitReport())">Submit report</button>
+  `);
+  onRepTargetTypeChange();
+}
+function onRepTargetTypeChange(){
+  repSelectedTarget = null;
+  const type = document.getElementById('repTargetType').value;
+  const picker = document.getElementById('repTargetPicker');
+  if(type==='team'){
+    picker.innerHTML = `
+      <div class="field"><label>Search tournament (the team belongs to)</label><input id="repTourSearch" placeholder="Type a tournament name…" oninput="onRepTourSearchInput()"></div>
+      <div id="repTourResults"></div>
+      <div id="repTeamSearchWrap" style="display:none;">
+        <div class="field"><label>Search team name</label><input id="repTeamSearch" placeholder="Type a team name…" oninput="onRepTeamSearchInput()"></div>
+        <div id="repTeamResults"></div>
+      </div>
+      <div id="repTargetSelected"></div>`;
+  } else {
+    picker.innerHTML = `
+      <div class="field"><label>Search ${type==='player'?'player by name':'tournament by name'}</label>
+        <input id="repEntitySearch" placeholder="Start typing…" oninput="onRepEntitySearchInput('${type}')"></div>
+      <div id="repEntityResults"></div>
+      <div id="repTargetSelected"></div>`;
+  }
+}
+function renderRepSelected(){
+  const wrap = document.getElementById('repTargetSelected');
+  if(!wrap) return;
+  wrap.innerHTML = repSelectedTarget ? `<div class="glass-soft" style="padding:10px 14px;margin:10px 0;display:flex;align-items:center;justify-content:space-between;"><span>Selected: <strong>${escapeHtml(repSelectedTarget.label)}</strong></span><button class="btn btn-sm btn-ghost" onclick="repSelectedTarget=null; renderRepSelected();">Change</button></div>` : '';
+}
+function onRepEntitySearchInput(type){
+  const q = document.getElementById('repEntitySearch').value.trim();
+  clearTimeout(repSearchDebounce);
+  const results = document.getElementById('repEntityResults');
+  if(!q){ results.innerHTML=''; return; }
+  repSearchDebounce = setTimeout(async ()=>{
+    try{
+      if(type==='player'){
+        const r = await api('/social/search?q='+encodeURIComponent(q)+'&page_size=8');
+        const items = r.items||[];
+        results.innerHTML = items.length ? items.map(p=>`
+          <div class="list-row" style="cursor:pointer;" onclick='repPickEntity(${JSON.stringify(p.user_id)}, ${JSON.stringify((p.user&&p.user.full_name)||p.display_name||'Player')})'>
+            <div class="row-icon">👤</div><div style="flex:1;">${escapeHtml((p.user&&p.user.full_name)||p.display_name||'Player')}${p.user&&p.user.player_uid?` <span class="muted" style="font-size:11px;">(UID ${escapeHtml(p.user.player_uid)})</span>`:''}</div>
+          </div>`).join('') : `<div class="muted" style="font-size:12px;padding:8px 0;">No players found</div>`;
+      } else {
+        const r = await api('/tournaments?search='+encodeURIComponent(q)+'&page_size=8');
+        const items = r.items||[];
+        results.innerHTML = items.length ? items.map(t=>`
+          <div class="list-row" style="cursor:pointer;" onclick='repPickEntity(${JSON.stringify(t.id)}, ${JSON.stringify(t.title)})'>
+            <div class="row-icon">🏆</div><div style="flex:1;">${escapeHtml(t.title)}</div>
+          </div>`).join('') : `<div class="muted" style="font-size:12px;padding:8px 0;">No tournaments found</div>`;
+      }
+    }catch(e){ results.innerHTML = `<div class="muted" style="font-size:12px;padding:8px 0;">⚠ ${escapeHtml(e.message)}</div>`; }
+  }, 350);
+}
+function repPickEntity(id, label){
+  repSelectedTarget = {id, label};
+  document.getElementById('repEntityResults').innerHTML = '';
+  document.getElementById('repEntitySearch').value = '';
+  renderRepSelected();
+}
+let repSelectedTournamentId = null;
+function onRepTourSearchInput(){
+  const q = document.getElementById('repTourSearch').value.trim();
+  clearTimeout(repSearchDebounce);
+  const results = document.getElementById('repTourResults');
+  if(!q){ results.innerHTML=''; return; }
+  repSearchDebounce = setTimeout(async ()=>{
+    try{
+      const r = await api('/tournaments?search='+encodeURIComponent(q)+'&page_size=8');
+      const items = r.items||[];
+      results.innerHTML = items.length ? items.map(t=>`
+        <div class="list-row" style="cursor:pointer;" onclick='repPickTournamentForTeam(${JSON.stringify(t.id)}, ${JSON.stringify(t.title)})'>
+          <div class="row-icon">🏆</div><div style="flex:1;">${escapeHtml(t.title)}</div>
+        </div>`).join('') : `<div class="muted" style="font-size:12px;padding:8px 0;">No tournaments found</div>`;
+    }catch(e){ results.innerHTML = `<div class="muted" style="font-size:12px;padding:8px 0;">⚠ ${escapeHtml(e.message)}</div>`; }
+  }, 350);
+}
+function repPickTournamentForTeam(tourId, tourLabel){
+  repSelectedTournamentId = tourId;
+  document.getElementById('repTourResults').innerHTML = '';
+  document.getElementById('repTourSearch').value = tourLabel;
+  document.getElementById('repTeamSearchWrap').style.display = '';
+}
+function onRepTeamSearchInput(){
+  const q = document.getElementById('repTeamSearch').value.trim();
+  clearTimeout(repSearchDebounce);
+  const results = document.getElementById('repTeamResults');
+  if(!q || !repSelectedTournamentId){ results.innerHTML=''; return; }
+  repSearchDebounce = setTimeout(async ()=>{
+    try{
+      const r = await api(`/tournaments/${repSelectedTournamentId}/teams?search=`+encodeURIComponent(q)+'&page_size=8');
+      const items = r.items||[];
+      results.innerHTML = items.length ? items.map(t=>`
+        <div class="list-row" style="cursor:pointer;" onclick='repPickEntity(${JSON.stringify(t.id)}, ${JSON.stringify(t.team_name)})'>
+          <div class="row-icon">👥</div><div style="flex:1;">${escapeHtml(t.team_name)}</div>
+        </div>`).join('') : `<div class="muted" style="font-size:12px;padding:8px 0;">No teams found</div>`;
+    }catch(e){ results.innerHTML = `<div class="muted" style="font-size:12px;padding:8px 0;">⚠ ${escapeHtml(e.message)}</div>`; }
+  }, 350);
+}
+async function submitReport(){
+  const target_type = document.getElementById('repTargetType').value;
+  const reason = document.getElementById('repReason').value;
+  const description = document.getElementById('repDesc').value.trim();
+  const evidence_urls = document.getElementById('repEvidence').value.trim();
+  if(!repSelectedTarget) return toast(`Search and select the ${target_type} you're reporting`,'err');
+  const body = { target_type, target_id: repSelectedTarget.id, reason };
+  if(description) body.description = description;
+  if(evidence_urls) body.evidence_urls = evidence_urls.split(',').map(s=>s.trim()).filter(Boolean);
+  try{
+    await api('/reports', {method:'POST', body, idempotencyKey:'rep-'+Date.now()});
+    toast('Report submitted'); closeModal();
+    reportsTab='reports'; PAGE_RENDERERS.reports(document.getElementById('page-reports'));
+  }catch(e){ toast(e.message,'err'); }
+}
+function openFileAppealModal(moderationActionId){
+  openModal(`
+    <div class="modal-head"><h3>File an appeal</h3><button class="modal-close" onclick="closeModal()">✕</button></div>
+    <div class="field"><label>Why should this action be reversed?</label><textarea id="appMessage" rows="5" placeholder="Explain your side…" maxlength="2000"></textarea></div>
+    <button class="btn btn-primary btn-block" onclick="withLoading(this, ()=>submitAppeal('${moderationActionId}'))">Submit appeal</button>
+  `);
+}
+async function submitAppeal(moderationActionId){
+  const message = document.getElementById('appMessage').value.trim();
+  if(!message) return toast('Enter your appeal message','err');
+  try{
+    await api('/appeals', {method:'POST', body:{moderation_action_id: moderationActionId, message}, idempotencyKey:'app-'+Date.now()});
+    toast('Appeal submitted'); closeModal();
+    reportsTab='appeals'; PAGE_RENDERERS.reports(document.getElementById('page-reports'));
+  }catch(e){ toast(e.message,'err'); }
 }
 
 /* ======================================================================
@@ -1625,7 +1960,7 @@ PAGE_RENDERERS.profile = async function(el){
               ${AVATARS.map(a=>`<div class="chip ${u.avatar_id===a?'active':''}" data-av="${a}" onclick="selectAvatar('${a}')">${a.replace('avatar_','#')}</div>`).join('')}
             </div>
           </div>
-          <button class="btn btn-primary btn-block mt-10" onclick="saveProfile()">Save changes</button>
+          <button class="btn btn-primary btn-block mt-10" onclick="withLoading(this, ()=>saveProfile())">Save changes</button>
         </div>
         <div>
           <div class="glass card mb-18">
@@ -1660,7 +1995,7 @@ async function openAddGameProfile(){
     <div class="field"><label>Game</label><select id="gpGame">${state.games.map(g=>`<option value="${g.id}">${escapeHtml(g.name)}</option>`).join('')}</select></div>
     <div class="field"><label>In-game name</label><input id="gpIgn" placeholder="Your in-game name"></div>
     <div class="field"><label>Player / UID</label><input id="gpUid" placeholder="Your game UID"></div>
-    <button class="btn btn-primary btn-block" onclick="submitGameProfile()">Save profile</button>
+    <button class="btn btn-primary btn-block" onclick="withLoading(this, ()=>submitGameProfile())">Save profile</button>
   `);
 }
 async function submitGameProfile(){
