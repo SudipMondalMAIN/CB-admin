@@ -339,6 +339,31 @@ async function apiCall(method, path, {query={}, body=null, auth=true} = {}){
   }
   return {ok:res.ok, status:res.status, data};
 }
+async function apiUpload(method, path, formData){
+  // Like apiCall but for multipart/form-data (file uploads) — no
+  // Content-Type header, the browser sets the multipart boundary itself.
+  const url = API_BASE + path;
+  const headers = {};
+  if(State.accessToken) headers['Authorization'] = 'Bearer ' + State.accessToken;
+  let res, data, text;
+  try{
+    res = await fetch(url, {method, headers, body: formData});
+    text = await res.text();
+    try{ data = text ? JSON.parse(text) : {}; }catch(e){ data = {raw:text}; }
+  }catch(networkErr){
+    return {ok:false, status:0, data:{message:'Could not reach the server. Check your connection.'}};
+  }
+  if(res.status===401 && State.refreshToken){
+    const refreshed = await tryRefresh();
+    if(refreshed){
+      headers['Authorization'] = 'Bearer ' + State.accessToken;
+      res = await fetch(url, {method, headers, body: formData});
+      text = await res.text();
+      try{ data = text ? JSON.parse(text) : {}; }catch(e){ data = {raw:text}; }
+    }
+  }
+  return {ok:res.ok, status:res.status, data};
+}
 async function tryRefresh(){
   try{
     const r = await fetch(API_BASE+'/auth/token/refresh', {
@@ -531,6 +556,25 @@ const MODULES = [
         {name:'update_message',label:'Update Message',type:'textarea'},
         {name:'is_active',label:'Active',type:'select',options:['true','false']},
       ]},
+    ]
+  },
+
+  { key:'banners', label:'Banners', icon:'🖼', group:'Catalog', desc:'Home-screen promo banners — image required, title & redirect link optional',
+    list:{ path:'/banners/admin', columns:[
+      col('image_url','Image', v=>v?`<img src="${v}" style="width:70px;height:40px;object-fit:cover;border-radius:6px;">`:'—'),
+      col('title','Title'), col('redirect_link','Redirect Link'),
+      col('sort_order','Sort Order'), col('is_active','Active',statusBadge), col('created_at','Created',dt),
+    ]},
+    actions:[{label:'Add Banner', custom:'openCreateBannerModal'}],
+    rowActions:[
+      {label:'Edit Details', kind:'confirm', method:'PATCH', path:'/banners/admin/:id', idField:'id', body:[
+        {name:'title',label:'Title'},
+        {name:'redirect_link',label:'Redirect Link'},
+        {name:'sort_order',label:'Sort Order',type:'number'},
+        {name:'is_active',label:'Active',type:'select',options:['true','false']},
+      ]},
+      {label:'Replace Image', custom:'openReplaceBannerImageModal'},
+      {label:'Delete Banner', kind:'confirm', danger:true, method:'DELETE', path:'/banners/admin/:id', idField:'id', body:[]},
     ]
   },
 
@@ -1998,6 +2042,87 @@ async function profileCancelWithdrawal(withdrawalId){
       showToast('Withdrawal cancelled.', 'ok'); loadProfileTab();
     },
   });
+}
+
+async function openCreateBannerModal(){
+  buildModal('Add Banner', 'Banners', [], ()=>{}, 'Upload');
+  document.getElementById('modalBody').innerHTML = `
+    <div class="formGrid">
+      <div class="field"><label>Banner Image *</label><input id="mf-image" type="file" accept="image/jpeg,image/png,image/webp"></div>
+      <div class="field"><label>Title (optional)</label><input id="mf-title" type="text" placeholder="e.g. Diwali Special"></div>
+      <div class="field"><label>Redirect Link (optional)</label><input id="mf-redirect_link" type="text" placeholder="e.g. https://... or app route"></div>
+      <div class="field"><label>Sort Order</label><input id="mf-sort_order" type="number" value="0"></div>
+      <div class="field"><label>Active</label><select id="mf-is_active"><option value="true" selected>true</option><option value="false">false</option></select></div>
+    </div>
+    <div class="hint">JPEG, PNG or WEBP, max 5MB.</div>
+    <div id="modalMsg"></div>
+    <div class="actionsBar">
+      <button class="btn btn-primary" style="width:auto;" id="modalSubmitBtn">Upload</button>
+      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+    </div>
+    <div id="modalResult"></div>
+  `;
+  document.getElementById('modalSubmitBtn').onclick = async ()=>{
+    const fileInput = document.getElementById('mf-image');
+    const file = fileInput.files[0];
+    if(!file){
+      document.getElementById('modalMsg').innerHTML = `<div class="banner err">Please choose a banner image.</div>`;
+      return;
+    }
+    const fd = new FormData();
+    fd.append('file', file);
+    const title = document.getElementById('mf-title').value.trim();
+    if(title) fd.append('title', title);
+    const redirectLink = document.getElementById('mf-redirect_link').value.trim();
+    if(redirectLink) fd.append('redirect_link', redirectLink);
+    fd.append('sort_order', document.getElementById('mf-sort_order').value || '0');
+    fd.append('is_active', document.getElementById('mf-is_active').value);
+    document.getElementById('modalSubmitBtn').disabled = true;
+    document.getElementById('modalMsg').innerHTML = `<div class="loadingRow"><span class="spinner"></span> Uploading…</div>`;
+    const r = await apiUpload('POST', '/banners/admin', fd);
+    document.getElementById('modalSubmitBtn').disabled = false;
+    if(r.ok){
+      document.getElementById('modalMsg').innerHTML = `<div class="banner ok">Done — banner added.</div>`;
+      setTimeout(()=>{ closeModal(); goSection(State.section); }, 900);
+    } else {
+      document.getElementById('modalMsg').innerHTML = `<div class="banner err">${friendlyError(r.data, r.status)}</div>`;
+    }
+  };
+}
+
+async function openReplaceBannerImageModal(id){
+  buildModal('Replace Image', `Applies to banner #${id}.`, [], ()=>{}, 'Upload');
+  document.getElementById('modalBody').innerHTML = `
+    <div class="formGrid">
+      <div class="field"><label>New Image *</label><input id="mf-image" type="file" accept="image/jpeg,image/png,image/webp"></div>
+    </div>
+    <div class="hint">JPEG, PNG or WEBP, max 5MB.</div>
+    <div id="modalMsg"></div>
+    <div class="actionsBar">
+      <button class="btn btn-primary" style="width:auto;" id="modalSubmitBtn">Upload</button>
+      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+    </div>
+    <div id="modalResult"></div>
+  `;
+  document.getElementById('modalSubmitBtn').onclick = async ()=>{
+    const file = document.getElementById('mf-image').files[0];
+    if(!file){
+      document.getElementById('modalMsg').innerHTML = `<div class="banner err">Please choose an image.</div>`;
+      return;
+    }
+    const fd = new FormData();
+    fd.append('file', file);
+    document.getElementById('modalSubmitBtn').disabled = true;
+    document.getElementById('modalMsg').innerHTML = `<div class="loadingRow"><span class="spinner"></span> Uploading…</div>`;
+    const r = await apiUpload('POST', `/banners/admin/${encodeURIComponent(id)}/image`, fd);
+    document.getElementById('modalSubmitBtn').disabled = false;
+    if(r.ok){
+      document.getElementById('modalMsg').innerHTML = `<div class="banner ok">Done — image replaced.</div>`;
+      setTimeout(()=>{ closeModal(); goSection(State.section); }, 900);
+    } else {
+      document.getElementById('modalMsg').innerHTML = `<div class="banner err">${friendlyError(r.data, r.status)}</div>`;
+    }
+  };
 }
 
 async function openBroadcastModal(){
