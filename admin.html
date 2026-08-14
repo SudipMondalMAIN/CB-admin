@@ -515,12 +515,17 @@ const MODULES = [
       {name:'name',label:'Name',required:true},
       {name:'icon_url',label:'Icon URL'},
       {name:'is_active',label:'Active',type:'select',options:['true','false']},
+      {name:'profile_schema',label:'Profile Fields (required — this is what lets players enter their nickname/UID)',type:'json',required:true,
+        value:'[\n  {"key": "nickname", "label": "Nickname", "type": "string", "required": true},\n  {"key": "uid", "label": "UID", "type": "string", "required": true}\n]',
+        placeholder:'JSON array of {key,label,type,required} — leaving this empty breaks the app\'s Add/Edit Game Profile screen'},
     ]}],
     rowActions:[
       {label:'Edit Game', kind:'confirm', method:'PATCH', path:'/games/:id', idField:'id', body:[
         {name:'name',label:'Name'},
         {name:'icon_url',label:'Icon URL'},
         {name:'is_active',label:'Active',type:'select',options:['true','false']},
+        {name:'profile_schema',label:'Profile Fields (leave blank to keep unchanged)',type:'json',
+          placeholder:'e.g. [{"key":"nickname","label":"Nickname","type":"string","required":true},{"key":"uid","label":"UID","type":"string","required":true}]'},
       ]},
     ]
   },
@@ -1509,6 +1514,10 @@ function fieldInputHtml(f){
   if(f.type==='csv'){
     return `<input id="mf-${f.name}" type="text" placeholder="${f.placeholder||'e.g. 10:00, 10:30, 11:00'}" value="${f.value!=null?f.value:''}">`;
   }
+  if(f.type==='json'){
+    const val = f.value!=null ? (typeof f.value==='string'?f.value:JSON.stringify(f.value,null,2)) : '';
+    return `<textarea id="mf-${f.name}" style="font-family:monospace;font-size:12px;min-height:120px" placeholder="${f.placeholder||''}">${val}</textarea>`;
+  }
   return `<input id="mf-${f.name}" type="${f.type||'text'}" placeholder="${f.placeholder||''}" value="${f.value!=null?f.value:''}">`;
 }
 function buildModal(title, desc, fields, onSubmit, submitLabel){
@@ -1648,6 +1657,10 @@ function collectFields(fields){
     if(f.type==='number') out[f.name] = Number(v);
     else if(f.type==='csv') out[f.name] = v.split(',').map(s=>s.trim()).filter(Boolean);
     else if(f.type==='datetime-local') out[f.name] = v + ':00+05:30'; // explicit IST offset, unambiguous for backend
+    else if(f.type==='json'){
+      try{ out[f.name] = JSON.parse(v); }
+      catch(e){ missing.push(`${f.label} (invalid JSON)`); }
+    }
     else out[f.name] = v;
   });
   return {out, missing};
