@@ -271,6 +271,7 @@ const State = {
   accessToken: localStorage.getItem('cb_access_token') || '',
   refreshToken: localStorage.getItem('cb_refresh_token') || '',
   userEmail: localStorage.getItem('cb_user_email') || '',
+  userRole: localStorage.getItem('cb_user_role') || '',
   section: 'dashboard',
 };
 
@@ -399,22 +400,63 @@ async function doLogin(){
     const d = r.data.data || r.data;
     const access = d.access_token || d.accessToken;
     const refresh = d.refresh_token || d.refreshToken;
+    const user = d.user || {};
     if(!access){ err.textContent='Signed in, but no session token was returned. Please contact the developer.'; return; }
+    // Admin-only gate: this panel must never be enterable by a plain "user" account.
+    // We check the role returned with the login response AND immediately verify it
+    // again against /users/me before showing any admin UI (see enterApp/checkAdminAccess).
+    if(!isAdminRole(user.role)){
+      err.textContent = 'This panel is for administrators only. Your account does not have admin access.';
+      return;
+    }
     State.accessToken = access; State.refreshToken = refresh || '';
     State.userEmail = identifier;
+    State.userRole = user.role || '';
     localStorage.setItem('cb_access_token', access);
     localStorage.setItem('cb_refresh_token', refresh||'');
     localStorage.setItem('cb_user_email', identifier);
+    localStorage.setItem('cb_user_role', user.role || '');
     enterApp();
   } else {
     err.textContent = friendlyError(r.data, r.status);
   }
 }
+
+/* Only 'admin' and 'super_admin' may use this panel. Plain 'user' accounts
+   are rejected here even though the backend also enforces this per-endpoint —
+   this keeps regular users from ever seeing the admin shell at all. */
+function isAdminRole(role){
+  return role === 'admin' || role === 'super_admin';
+}
+
+/* Re-checks the current session against the server (source of truth) rather
+   than trusting whatever role is cached in localStorage. Called on page load
+   before an existing session is allowed to auto-enter the app, and used to
+   kick out any session that no longer has admin rights (e.g. role was
+   revoked, or a stale/forged localStorage value). */
+async function verifyAdminSession(){
+  const r = await apiCall('GET','/users/me',{});
+  if(!r.ok){
+    doLogout();
+    return false;
+  }
+  const me = r.data.data || r.data;
+  if(!isAdminRole(me.role)){
+    doLogout();
+    const err = document.getElementById('loginErr');
+    if(err) err.textContent = 'This panel is for administrators only. Your account does not have admin access.';
+    return false;
+  }
+  State.userRole = me.role;
+  localStorage.setItem('cb_user_role', me.role);
+  return true;
+}
 function doLogout(){
   localStorage.removeItem('cb_access_token');
   localStorage.removeItem('cb_refresh_token');
   localStorage.removeItem('cb_user_email');
-  State.accessToken=''; State.refreshToken='';
+  localStorage.removeItem('cb_user_role');
+  State.accessToken=''; State.refreshToken=''; State.userRole='';
   document.getElementById('app').classList.remove('active');
   document.getElementById('loginScreen').style.display='flex';
 }
@@ -460,11 +502,30 @@ const statusBadge = v => {
 const MODULES = [
   { key:'dashboard', label:'Dashboard', icon:'▤', group:'Overview' },
 
+  { key:'analytics', label:'Analytics', icon:'◧', group:'Overview', desc:'Daily / weekly / monthly platform statistics and custom metrics',
+    lookupOnly:true,
+    actions:[
+      {label:"Today's Statistics", method:'GET', path:'/admin/dashboard/statistics/daily', fields:[{name:'target_date',label:'Date (YYYY-MM-DD, optional — defaults to today)'}], resultAsCard:true},
+      {label:'Weekly Statistics', method:'GET', path:'/admin/dashboard/statistics/weekly', fields:[{name:'week_start',label:'Week Start Date (YYYY-MM-DD, optional)'}], resultAsCard:true},
+      {label:'Monthly Statistics', method:'GET', path:'/admin/dashboard/statistics/monthly', fields:[{name:'year',label:'Year',type:'number'},{name:'month',label:'Month (1-12)',type:'number'}], resultAsCard:true},
+      {label:'Custom Metric Analytics', method:'GET', path:'/admin/dashboard/analytics/:metric', fields:[
+        {name:'metric',label:'Metric Name',required:true,placeholder:'e.g. revenue, signups, tournaments'},
+        {name:'period_type',label:'Period Type',type:'select',options:['daily','weekly','monthly']},
+        {name:'start_date',label:'Start Date (YYYY-MM-DD)'},
+        {name:'end_date',label:'End Date (YYYY-MM-DD)'},
+      ], resultAsCard:true},
+    ]
+  },
+
   { key:'users', label:'Users', icon:'◈', group:'People', desc:'All registered players',
     list:{ path:'/admin/users', query:['search'], searchPlaceholder:'Search by name or email…',
       columns:[col('id','ID'),col('full_name','Name'),col('email','Email'),col('phone_number','Phone'),col('player_uid','Player UID'),col('status','Status',statusBadge),col('created_at','Joined',dt)] },
     rowActions:[
       {label:'View Profile', custom:'openUserProfileModal'},
+    ],
+    actions:[
+      {label:"Look Up a User's Friends", method:'GET', path:'/admin/users/:user_id/friends', fields:[{name:'user_id',label:'User ID',required:true},{name:'search',label:'Search (optional)'}], resultAsTable:true, columns:[col('id','ID'),col('full_name','Name'),col('email','Email'),col('player_uid','Player UID')]},
+      {label:"Look Up a User's Tournament History", method:'GET', path:'/admin/users/:user_id/tournament-history', fields:[{name:'user_id',label:'User ID',required:true},{name:'status',label:'Status Filter (optional)'}], resultAsTable:true, columns:[col('tournament_id','Tournament'),col('status','Status',statusBadge),col('created_at','Registered',dt)]},
     ]
   },
 
@@ -472,10 +533,15 @@ const MODULES = [
     list:{ path:'/admin/security/locked-accounts', columns:[col('id','ID'),col('user_id','User ID'),col('reason','Reason'),col('locked_at','Locked At',dt)] },
     extraLists:[
       {label:'Login History', path:'/admin/security/login-history', columns:[col('user_id','User'),col('ip_address','IP'),col('success','Result',v=>v?'<span class="badge ok">Success</span>':'<span class="badge danger">Failed</span>'),col('created_at','Time',dt)]},
-      {label:'Security Events', path:'/admin/security/events', columns:[col('event_type','Event'),col('severity','Severity',statusBadge),col('description','Description'),col('created_at','Time',dt)]},
+      {label:'Security Events', path:'/admin/security/events', columns:[col('id','ID'),col('event_type','Event'),col('severity','Severity',statusBadge),col('description','Description'),col('resolved','Resolved',statusBadge),col('created_at','Time',dt)],
+        rowActions:[
+          {label:'Resolve Event', kind:'confirm', method:'PATCH', path:'/admin/security/events/:id/resolve', idField:'id', body:[]},
+        ]},
     ],
     actions:[
       {label:'Unlock an Account', method:'POST', path:'/admin/security/accounts/:user_id/unlock', fields:[{name:'user_id',label:'User ID',required:true},{name:'reason',label:'Reason'}]},
+      {label:'Lock an Account', method:'POST', path:'/admin/security/accounts/:user_id/lock', fields:[{name:'user_id',label:'User ID',required:true},{name:'reason',label:'Reason',required:true}]},
+      {label:"Look Up a User's Risk Score", method:'GET', path:'/admin/security/risk-score/:user_id', fields:[{name:'user_id',label:'User ID',required:true}], resultAsCard:true},
     ]
   },
 
@@ -530,6 +596,94 @@ const MODULES = [
     ]
   },
 
+  { key:'gamemodes', label:'Game Modes', icon:'◎', group:'Catalog', desc:'Modes within a game (e.g. Solo, Duo, Squad) — used by maps and home boxes',
+    list:{ path:'/game-modes', query:['game_id','search'], searchPlaceholder:'Search by name…', columns:[
+      col('id','ID'), col('game_id','Game ID'), col('name','Name'), col('short_name','Short Name'),
+      col('max_team_size','Team Size'), col('min_players','Min P'), col('max_players','Max P'),
+      col('is_active','Active',statusBadge), col('is_featured','Featured',statusBadge),
+    ]},
+    actions:[{label:'Add Game Mode', method:'POST', path:'/game-modes', fields:[
+      {name:'game_id',label:'Game ID',required:true},
+      {name:'name',label:'Name',required:true},
+      {name:'short_name',label:'Short Name'},
+      {name:'description',label:'Description',type:'textarea'},
+      {name:'icon_url',label:'Icon URL'},
+      {name:'image_url',label:'Image URL'},
+      {name:'max_team_size',label:'Max Team Size',type:'number',value:'1'},
+      {name:'min_players',label:'Min Players',type:'number',value:'1'},
+      {name:'max_players',label:'Max Players',type:'number',value:'1'},
+      {name:'sort_order',label:'Sort Order',type:'number'},
+      {name:'is_active',label:'Active',type:'select',options:['true','false']},
+      {name:'is_featured',label:'Featured',type:'select',options:['true','false']},
+    ]}],
+    rowActions:[
+      {label:'Edit Game Mode', kind:'confirm', method:'PATCH', path:'/game-modes/:id', idField:'id', body:[
+        {name:'name',label:'Name'}, {name:'short_name',label:'Short Name'},
+        {name:'description',label:'Description',type:'textarea'}, {name:'icon_url',label:'Icon URL'}, {name:'image_url',label:'Image URL'},
+        {name:'max_team_size',label:'Max Team Size',type:'number'}, {name:'min_players',label:'Min Players',type:'number'}, {name:'max_players',label:'Max Players',type:'number'},
+        {name:'sort_order',label:'Sort Order',type:'number'},
+        {name:'is_active',label:'Active',type:'select',options:['true','false']},
+        {name:'is_featured',label:'Featured',type:'select',options:['true','false']},
+      ]},
+      {label:'Delete Game Mode', kind:'confirm', danger:true, method:'DELETE', path:'/game-modes/:id', idField:'id', body:[]},
+    ]
+  },
+
+  { key:'maps', label:'Maps', icon:'◫', group:'Catalog', desc:'Maps within a game/mode (e.g. Erangel, Bermuda)',
+    list:{ path:'/maps', query:['game_id','mode_id'], columns:[
+      col('id','ID'), col('game_id','Game ID'), col('mode_id','Mode ID'), col('name','Name'),
+      col('image_url','Image', v=>v?`<img src="${v}" style="width:60px;height:36px;object-fit:cover;border-radius:6px;">`:'—'),
+      col('is_active','Active',statusBadge), col('is_featured','Featured',statusBadge),
+    ]},
+    actions:[{label:'Add Map', method:'POST', path:'/maps', fields:[
+      {name:'game_id',label:'Game ID',required:true},
+      {name:'mode_id',label:'Game Mode ID (optional)'},
+      {name:'name',label:'Name',required:true},
+      {name:'short_name',label:'Short Name'},
+      {name:'description',label:'Description',type:'textarea'},
+      {name:'image_url',label:'Image URL'},
+      {name:'thumbnail_url',label:'Thumbnail URL'},
+      {name:'sort_order',label:'Sort Order',type:'number'},
+      {name:'is_active',label:'Active',type:'select',options:['true','false']},
+      {name:'is_featured',label:'Featured',type:'select',options:['true','false']},
+    ]}],
+    rowActions:[
+      {label:'Edit Map', kind:'confirm', method:'PATCH', path:'/maps/:id', idField:'id', body:[
+        {name:'mode_id',label:'Game Mode ID'}, {name:'name',label:'Name'}, {name:'short_name',label:'Short Name'},
+        {name:'description',label:'Description',type:'textarea'}, {name:'image_url',label:'Image URL'}, {name:'thumbnail_url',label:'Thumbnail URL'},
+        {name:'sort_order',label:'Sort Order',type:'number'},
+        {name:'is_active',label:'Active',type:'select',options:['true','false']},
+        {name:'is_featured',label:'Featured',type:'select',options:['true','false']},
+      ]},
+      {label:'Delete Map', kind:'confirm', danger:true, method:'DELETE', path:'/maps/:id', idField:'id', body:[]},
+    ]
+  },
+
+  { key:'homeboxes', label:'Home Category Boxes', icon:'▦', group:'Catalog', desc:'Home-screen category boxes (Solo / Squad / Custom) linking to a game',
+    list:{ path:'/home-boxes/admin', columns:[
+      col('id','ID'), col('box_type','Type',statusBadge), col('game_id','Game ID'), col('title','Title'),
+      col('banner_url','Banner', v=>v?`<img src="${v}" style="width:70px;height:40px;object-fit:cover;border-radius:6px;">`:'—'),
+      col('sort_order','Sort Order'), col('is_active','Active',statusBadge),
+    ]},
+    actions:[{label:'Add Home Box', method:'POST', path:'/home-boxes/admin', fields:[
+      {name:'box_type',label:'Box Type',type:'select',options:['solo','squad','custom'],required:true},
+      {name:'game_id',label:'Game (required unless Custom)',type:'game-select'},
+      {name:'banner_url',label:'Banner URL',required:true},
+      {name:'title',label:'Title'},
+      {name:'sort_order',label:'Sort Order',type:'number'},
+      {name:'is_active',label:'Active',type:'select',options:['true','false']},
+    ]}],
+    rowActions:[
+      {label:'Edit Home Box', kind:'confirm', method:'PATCH', path:'/home-boxes/admin/:id', idField:'id', body:[
+        {name:'box_type',label:'Box Type',type:'select',options:['solo','squad','custom']},
+        {name:'game_id',label:'Game',type:'game-select'}, {name:'banner_url',label:'Banner URL'}, {name:'title',label:'Title'},
+        {name:'sort_order',label:'Sort Order',type:'number'},
+        {name:'is_active',label:'Active',type:'select',options:['true','false']},
+      ]},
+      {label:'Delete Home Box', kind:'confirm', danger:true, method:'DELETE', path:'/home-boxes/admin/:id', idField:'id', body:[]},
+    ]
+  },
+
   { key:'schedules', label:'Match Schedules', icon:'⏱', group:'Catalog', desc:'Pick a game + first/last match time + interval — matches auto-generate every day automatically after this one-time setup',
     list:{ path:'/schedules', query:['game_id'], columns:[
       col('id','Schedule ID'), col('game_id','Game ID'), col('category','Category',statusBadge),
@@ -537,7 +691,10 @@ const MODULES = [
       col('entry_fee','Entry Fee',money), col('prize_pool','Prize Pool',money),
       col('max_players','Max/Slot'), col('last_generated_on','Last Generated',dt),
     ]},
-    actions:[{label:'Create Schedule', custom:'openCreateScheduleModal'}],
+    actions:[
+      {label:'Create Schedule', custom:'openCreateScheduleModal'},
+      {label:"Generate Today's Slots for ALL Schedules", method:'POST', path:'/schedules/generate-today', fields:[]},
+    ],
     rowActions:[
       {label:'Edit Schedule', custom:'openEditScheduleModal'},
       {label:"Generate Today's Slots Now", kind:'confirm', method:'POST', path:'/schedules/:id/generate-slots', idField:'id', body:[]},
@@ -583,13 +740,22 @@ const MODULES = [
     ]
   },
 
-  { key:'teams', label:'Teams', icon:'⛊', group:'Catalog', desc:'Look up and manage a team by ID',
-    lookupOnly:true,
+  { key:'teams', label:'Teams', icon:'⛊', group:'Catalog', desc:'Every team across every tournament',
+    list:{ path:'/admin/teams', query:['status','search'], searchPlaceholder:'Search by team name/tag…', columns:[
+      col('id','ID'), col('team_uid','Team UID'), col('tournament_id','Tournament ID'), col('team_name','Name'),
+      col('team_size','Size'), col('current_members','Members'), col('status','Status',statusBadge),
+      col('is_locked','Locked',statusBadge), col('created_at','Created',dt),
+    ]},
     actions:[
       {label:'Look Up a Team', method:'GET', path:'/teams/:team_id', fields:[{name:'team_id',label:'Team ID',required:true}], resultAsCard:true},
-      {label:'Update Team', method:'PATCH', path:'/teams/:team_id', fields:[{name:'team_id',label:'Team ID',required:true},{name:'name',label:'New Name'},{name:'tag',label:'New Tag'}]},
-      {label:'Lock / Unlock Team', method:'PATCH', path:'/teams/:team_id/lock', fields:[{name:'team_id',label:'Team ID',required:true},{name:'is_locked',label:'Locked',type:'select',options:['true','false']}]},
-      {label:'Remove a Member', method:'POST', path:'/teams/:team_id/members/remove', fields:[{name:'team_id',label:'Team ID',required:true},{name:'user_id',label:'User ID',required:true}]},
+      {label:'Auto-Assign Random Teams', method:'POST', path:'/tournaments/:tournament_id/teams/auto-assign', fields:[{name:'tournament_id',label:'Tournament ID',required:true},{name:'team_size',label:'Team Size',type:'number',required:true},{name:'seed',label:'Random Seed (optional)',type:'number'}]},
+      {label:"Organizer: Remove a Player from a Tournament's Teams", method:'POST', path:'/tournaments/:tournament_id/teams/organizer/remove-player', fields:[{name:'tournament_id',label:'Tournament ID',required:true},{name:'user_id',label:'User ID',required:true}]},
+    ],
+    rowActions:[
+      {label:'Update Team', kind:'confirm', method:'PATCH', path:'/teams/:id', idField:'id', body:[{name:'name',label:'New Name'},{name:'tag',label:'New Tag'}]},
+      {label:'Lock / Unlock Team', kind:'confirm', method:'PATCH', path:'/teams/:id/lock', idField:'id', body:[{name:'is_locked',label:'Locked',type:'select',options:['true','false'],required:true}]},
+      {label:'Remove a Member', kind:'confirm', method:'POST', path:'/teams/:id/members/remove', idField:'id', body:[{name:'user_id',label:'User ID',required:true}]},
+      {label:'Organizer: Remove Team', kind:'confirm', danger:true, method:'DELETE', path:'/teams/:id/organizer', idField:'id', body:[]},
     ]
   },
 
@@ -609,9 +775,64 @@ const MODULES = [
     customRender:true,
   },
 
+  { key:'prizepools', label:'Prize Pools', icon:'✦', group:'Finance', desc:'Configure, publish and distribute a structured prize pool for a tournament',
+    list:{ path:'/admin/prize-pools', query:['status'], columns:[
+      col('id','ID'), col('tournament_id','Tournament ID'), col('total_amount','Total',money),
+      col('distribution_type','Distribution',statusBadge), col('status','Status',statusBadge),
+      col('published_at','Published',dt), col('distributed_at','Distributed',dt),
+    ]},
+    extraLists:[{label:'Prize Payouts', path:'/admin/prize-payouts', query:['status'], columns:[
+      col('id','ID'), col('tournament_id','Tournament'), col('user_id','User'), col('rank','Rank'),
+      col('amount','Amount',money), col('status','Status',statusBadge), col('created_at','Created',dt),
+    ]}],
+    actions:[
+      {label:'Create Prize Pool', method:'POST', path:'/admin/tournaments/:tournament_id/prize-pool', fields:[
+        {name:'tournament_id',label:'Tournament ID',required:true},
+        {name:'total_amount',label:'Total Amount',type:'number',required:true},
+        {name:'distribution_type',label:'Distribution Type',type:'select',options:['single_winner','top_n','percentage','fixed_amount'],required:true},
+        {name:'distribution_rules',label:'Distribution Rules (JSON array)',type:'json',required:true,
+          value:'[\n  {"rank": 1, "percentage": "60.00"},\n  {"rank": 2, "percentage": "40.00"}\n]',
+          placeholder:'Each item is {"rank": N, "percentage": "X.XX"} or {"rank": N, "amount": "X.XX"} depending on Distribution Type'},
+      ]},
+      {label:'Update Prize Pool', method:'PATCH', path:'/admin/tournaments/:tournament_id/prize-pool', fields:[
+        {name:'tournament_id',label:'Tournament ID',required:true},
+        {name:'total_amount',label:'Total Amount',type:'number'},
+        {name:'distribution_type',label:'Distribution Type',type:'select',options:['single_winner','top_n','percentage','fixed_amount']},
+        {name:'distribution_rules',label:'Distribution Rules (JSON array, leave blank to keep unchanged)',type:'json'},
+      ]},
+      {label:'Publish Prize Pool', method:'POST', path:'/admin/tournaments/:tournament_id/prize-pool/publish', fields:[
+        {name:'tournament_id',label:'Tournament ID',required:true},
+      ]},
+      {label:'Cancel Prize Pool', method:'POST', path:'/admin/tournaments/:tournament_id/prize-pool/cancel', queryFields:['reason'], fields:[
+        {name:'tournament_id',label:'Tournament ID',required:true},
+        {name:'reason',label:'Reason',required:true},
+      ]},
+      {label:'Assign Winners', method:'POST', path:'/admin/tournaments/:tournament_id/prize-pool/winners', fields:[
+        {name:'tournament_id',label:'Tournament ID',required:true},
+        {name:'winners',label:'Winners (JSON array)',type:'json',required:true,
+          value:'[\n  {"rank": 1, "participant_id": "PARTICIPANT-UUID"}\n]',
+          placeholder:'Each item is {"rank": N, "participant_id": "UUID"}'},
+      ]},
+      {label:'Distribute Prizes', method:'POST', path:'/admin/tournaments/:tournament_id/prize-pool/distribute', fields:[
+        {name:'tournament_id',label:'Tournament ID',required:true},
+      ]},
+      {label:'Manually Mark Payout Paid', method:'POST', path:'/admin/prize-payouts/:payout_id/pay', fields:[
+        {name:'payout_id',label:'Payout ID',required:true},
+        {name:'reason',label:'Reason',required:true},
+      ]},
+      {label:'Retry a Failed Payout', method:'POST', path:'/admin/prize-payouts/:payout_id/retry', fields:[
+        {name:'payout_id',label:'Payout ID',required:true},
+      ]},
+      {label:'Look Up Tournament Prize Pool', method:'GET', path:'/tournaments/:tournament_id/prize-pool', fields:[
+        {name:'tournament_id',label:'Tournament ID',required:true},
+      ], resultAsCard:true},
+    ]
+  },
+
   { key:'wallet', label:'Wallets', icon:'$', group:'Finance', desc:'User wallet balances & adjustments',
     list:{ path:'/admin/wallets/transactions', columns:[col('id','ID'),col('user_id','User'),col('amount','Amount',money),col('type','Type',statusBadge),col('created_at','Date',dt)] },
     actions:[
+      {label:'Adjust Wallet (+/-)', method:'POST', path:'/admin/wallets/:user_id/adjust', fields:[{name:'user_id',label:'User ID',required:true},{name:'amount',label:'Amount (positive credits, negative debits)',type:'number',required:true},{name:'reason',label:'Reason',required:true}]},
       {label:'Credit Wallet', method:'POST', path:'/admin/wallets/:user_id/credit', fields:[{name:'user_id',label:'User ID',required:true},{name:'amount',label:'Amount',type:'number',required:true},{name:'reason',label:'Reason',required:true}]},
       {label:'Debit Wallet', method:'POST', path:'/admin/wallets/:user_id/debit', fields:[{name:'user_id',label:'User ID',required:true},{name:'amount',label:'Amount',type:'number',required:true},{name:'reason',label:'Reason',required:true}]},
       {label:'Freeze / Unfreeze Wallet', method:'PATCH', path:'/admin/wallets/:user_id/freeze', fields:[{name:'user_id',label:'User ID',required:true},{name:'is_frozen',label:'Frozen',type:'select',options:['true','false']}]},
@@ -884,6 +1105,7 @@ async function loadTournamentsList(){
       <td class="cellMuted">#${m.short_id ?? ''}<div class="cellMuted">${m.id}</div></td>
       <td>${m.title}<div class="cellMuted">${m.tournament_uid||''}</div></td>
       <td>${statusBadge(m.status)}</td>
+      <td>${m.organizer||'—'}${m.organizer && m.organizer!=='ClassyBattle' ? ' <span class="badge info" style="font-size:10px;">User-hosted</span>' : ''}</td>
       <td>${money(m.entry_fee)} / ${money(m.prize_pool)}</td>
       <td>${m.current_players}/${m.max_players}</td>
       <td>
@@ -897,13 +1119,13 @@ async function loadTournamentsList(){
         </div>
       </td>
     </tr>
-    <tr id="mt-results-row-${m.id}" style="display:none;"><td colspan="5"><div id="mt-results-${m.id}"></div></td></tr>
+    <tr id="mt-results-row-${m.id}" style="display:none;"><td colspan="7"><div id="mt-results-${m.id}"></div></td></tr>
   `).join('');
   body.innerHTML = `
     <div class="glass pane">
       <div class="sectionHead"><div><h3>Tournaments</h3></div></div>
       <div class="tableWrap"><table class="dataTable"><thead><tr>
-        <th>ID</th><th>Title</th><th>Status</th><th>Entry / Prize</th><th>Players</th><th>Actions</th>
+        <th>ID</th><th>Title</th><th>Status</th><th>Organizer</th><th>Entry / Prize</th><th>Players</th><th>Actions</th>
       </tr></thead><tbody>${rows}</tbody></table></div>
     </div>
   `;
@@ -1508,6 +1730,9 @@ function fieldInputHtml(f){
   if(f.type==='select'){
     return `<select id="mf-${f.name}">${f.options.map(o=>`<option value="${o}" ${f.value===o?'selected':''}>${o}</option>`).join('')}</select>`;
   }
+  if(f.type==='game-select'){
+    return `<select id="mf-${f.name}"><option value="">Loading games…</option></select>`;
+  }
   if(f.type==='textarea'){
     return `<textarea id="mf-${f.name}" placeholder="${f.placeholder||''}">${f.value!=null?f.value:''}</textarea>`;
   }
@@ -1726,6 +1951,17 @@ async function fetchGameOptionsHtml(selectedId){
   return `<option value="">Select a game…</option>` + items.map(g=>
     `<option value="${g.id}" ${g.id===selectedId?'selected':''}>${g.name}</option>`
   ).join('');
+}
+
+// Fills in any 'game-select' fields in a modal (built via buildModal/fieldInputHtml)
+// with the live list of games, once the modal's <select> elements exist in the DOM.
+async function populateGameSelects(fields){
+  const gameFields = (fields||[]).filter(f=>f.type==='game-select');
+  for(const f of gameFields){
+    const el = document.getElementById('mf-'+f.name);
+    if(!el) continue;
+    el.innerHTML = await fetchGameOptionsHtml(f.value);
+  }
 }
 
 /* ============================================================
@@ -2333,7 +2569,12 @@ function openActionModal(modKey, idx){
       return;
     }
     a.fields.forEach(f=>{ if(path.includes(':'+f.name)){ path = path.replace(':'+f.name, encodeURIComponent(out[f.name]||'')); delete bodyOut[f.name]; } });
-    const r = await apiCall(a.method, path, {body: (a.method==='GET'?null:bodyOut), query:(a.method==='GET'?bodyOut:{})});
+    // queryFields: field names that must go on the querystring even for
+    // non-GET requests (some endpoints, e.g. prize-pool cancel, take a
+    // reason as a query param rather than a JSON body).
+    const queryOut = {};
+    (a.queryFields||[]).forEach(name=>{ if(name in bodyOut){ queryOut[name] = bodyOut[name]; delete bodyOut[name]; } });
+    const r = await apiCall(a.method, path, {body: (a.method==='GET'?null:bodyOut), query:(a.method==='GET'?bodyOut:queryOut)});
     document.getElementById('modalSubmitBtn').disabled = false;
     if(r.ok){
       document.getElementById('modalMsg').innerHTML = `<div class="banner ok">Done — request completed successfully.</div>`;
@@ -2344,6 +2585,7 @@ function openActionModal(modKey, idx){
       document.getElementById('modalMsg').innerHTML = `<div class="banner err">${friendlyError(r.data, r.status)}</div>`;
     }
   }, 'Confirm');
+  populateGameSelects(a.fields);
 }
 
 function openRowActionModal(modKey, listKey, raIdx, id){
@@ -2372,6 +2614,7 @@ function openRowActionModal(modKey, listKey, raIdx, id){
       document.getElementById('modalMsg').innerHTML = `<div class="banner err">${friendlyError(r.data, r.status)}</div>`;
     }
   }, 'Confirm');
+  populateGameSelects(fields);
 }
 
 function renderResultCard(data){
@@ -2404,7 +2647,11 @@ function renderResultTable(data, columns){
    "Cannot access 'MODULES' before initialization" and the whole
    script dies before the sidebar ever renders.
 ============================================================ */
-if(State.accessToken){ enterApp(); }
+if(State.accessToken){
+  // Don't trust a cached token/role blindly on reload — re-verify with the
+  // server that this session still belongs to an admin before entering.
+  verifyAdminSession().then(function(ok){ if(ok) enterApp(); });
+}
 </script>
 </body>
 </html>
