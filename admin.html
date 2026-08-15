@@ -39,6 +39,9 @@ body{
 
 /* ---------- LOGIN ---------- */
 #loginScreen{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:100;}
+#loadingScreen{position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:100;flex-direction:column;gap:14px;}
+#loadingScreen .spinner{width:28px;height:28px;border-width:3px;}
+#loadingScreen .loadingText{color:var(--sub);font-size:13px;font-weight:600;}
 .loginCard{width:400px;padding:38px 36px;text-align:center;}
 .loginCard .mark{width:52px;height:52px;margin:0 auto 18px;border-radius:16px;
   background:linear-gradient(135deg,var(--accent),var(--accent2));
@@ -130,6 +133,8 @@ table.dataTable tbody td{padding:12px 14px;border-bottom:1px solid var(--border-
 table.dataTable tbody tr:hover{background:rgba(47,111,237,0.04);}
 table.dataTable tbody tr:last-child td{border-bottom:none;}
 .cellMuted{color:var(--sub2);}
+.upiQrThumb{width:52px;height:52px;border-radius:6px;border:1px solid var(--border,#333);background:#fff;padding:3px;cursor:pointer;transition:transform .15s ease;object-fit:contain;}
+.upiQrThumb:hover{transform:scale(1.15);}
 .tblToolbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:10px;flex-wrap:wrap;}
 .pager{display:flex;gap:8px;align-items:center;margin-top:14px;justify-content:flex-end;}
 .pager span{font-size:12.5px;color:var(--sub);}
@@ -229,6 +234,24 @@ table.dataTable tbody tr:last-child td{border-bottom:none;}
     <div class="loginErr" id="loginErr"></div>
   </div>
 </div>
+
+<!-- ================= LOADING (shown instead of the login form while a
+     stored session is being re-verified on page load/refresh, so a
+     returning admin never sees a flash of the login box) ================= -->
+<div id="loadingScreen">
+  <span class="spinner"></span>
+  <div class="loadingText">Loading Your Workspace…</div>
+</div>
+
+<!-- Runs before any other script, synchronously, so the correct screen
+     is showing on the very first paint -- no flash of the login form
+     for a session that's about to be auto-restored. -->
+<script>
+  if (localStorage.getItem('cb_access_token')) {
+    document.getElementById('loginScreen').style.display = 'none';
+    document.getElementById('loadingScreen').style.display = 'flex';
+  }
+</script>
 
 <!-- ================= APP SHELL ================= -->
 <div id="app">
@@ -458,9 +481,11 @@ function doLogout(){
   localStorage.removeItem('cb_user_role');
   State.accessToken=''; State.refreshToken=''; State.userRole='';
   document.getElementById('app').classList.remove('active');
+  document.getElementById('loadingScreen').style.display='none';
   document.getElementById('loginScreen').style.display='flex';
 }
 function enterApp(){
+  document.getElementById('loadingScreen').style.display='none';
   document.getElementById('loginScreen').style.display='none';
   document.getElementById('app').classList.add('active');
   document.getElementById('whoami').textContent = State.userEmail || 'Admin';
@@ -487,6 +512,21 @@ const methodDetailsFmt = v => {
   if(!v || typeof v !== 'object') return '—';
   const parts = Object.entries(v).filter(([k,val])=>val!=null && val!=='').map(([k,val])=>`${k.replace(/_/g,' ')}: ${val}`);
   return parts.length ? parts.join('<br>') : '—';
+};
+const proofLinkFmt = v => v ? `<a href="${v}" target="_blank" rel="noopener">View Proof</a>` : '<span class="cellMuted">—</span>';
+const upiQrFmt = (v, row) => {
+  if(!v || typeof v !== 'object') return '<span class="cellMuted">—</span>';
+  const status = String((row && row.status) || '').toLowerCase();
+  if(['completed','paid','success','rejected','cancelled','canceled','failed'].some(s=>status.includes(s))){
+    return '<span class="cellMuted">—</span>';
+  }
+  const upiId = v.upi_id || v.upi || v.vpa || v.upi_number || v.upi_address;
+  if(!upiId) return '<span class="cellMuted">—</span>';
+  const payeeName = (v.account_holder_name || v.name || v.holder_name || 'Payout').toString();
+  const amount = row && row.amount != null ? row.amount : '';
+  const upiUri = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(payeeName)}${amount?`&am=${encodeURIComponent(amount)}`:''}&cu=INR`;
+  const qrImg = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(upiUri)}`;
+  return `<img src="${qrImg}" alt="UPI QR for ${escapeHtmlAdmin(upiId)}" class="upiQrThumb" loading="lazy" onclick="openUpiQrModal('${escapeHtmlAdmin(upiId)}','${escapeHtmlAdmin(payeeName)}','${qrImg.replace(/'/g,"%27")}')">`;
 };
 const statusBadge = v => {
   if(v==null) return '<span class="badge gray">—</span>';
@@ -767,8 +807,17 @@ const MODULES = [
     customRender:true,
   },
 
-  { key:'history', label:'Tournament History', icon:'⌛', group:'Operations', desc:'Every tournament ever created, any status — full archive',
-    customRender:true,
+  { key:'customresults', label:'Custom Result Verification', icon:'🛈', group:'Operations', desc:'Review self-declared win/loss claims from 1v1 Custom Tournaments — approve or reject win proofs',
+    list:{ path:'/admin/custom-results/pending', columns:[
+      col('id','Claim ID'), col('tournament_title','Tournament'), col('claimant_name','Claimant'),
+      col('outcome','Claimed Outcome',statusBadge), col('proof_url','Proof',proofLinkFmt),
+      col('opponent_name','Opponent'), col('opponent_outcome','Opponent Outcome',statusBadge),
+      col('status','Status',statusBadge), col('submitted_at','Submitted',dt),
+    ] },
+    rowActions:[
+      {label:'Approve', kind:'confirm', method:'POST', path:'/admin/custom-results/:id/approve', idField:'id', body:[], visibleWhen:row=>row.status==='pending'},
+      {label:'Reject', kind:'confirm', danger:true, method:'POST', path:'/admin/custom-results/:id/reject', idField:'id', body:[{name:'reason',label:'Reason',required:true}], visibleWhen:row=>row.status==='pending'},
+    ],
   },
 
   { key:'prize', label:'Prizes & Payouts', icon:'♦', group:'Finance', desc:'Winners across completed tournaments — who won what rank, and who still needs to be paid',
@@ -863,13 +912,18 @@ const MODULES = [
   },
 
   { key:'withdrawals', label:'Withdrawals', icon:'⇩', group:'Finance', desc:'Approve or reject withdrawal requests',
-    list:{ path:'/admin/withdrawals', query:['status'], columns:[col('txn_no','TXN ID'),col('id','ID'),col('user_id','User'),col('amount','Amount',money),col('method_type','Method',statusBadge),col('method_details','Payment Details',methodDetailsFmt),col('status','Status',statusBadge),col('created_at','Requested',dt)] },
+    list:{ path:'/admin/withdrawals', query:['status'], defaultSort:{key:'created_at', dir:'desc'}, columns:[col('txn_no','TXN ID'),col('id','ID'),col('user_id','User'),col('amount','Amount',money),col('method_type','Method',statusBadge),col('method_details','Payment Details',methodDetailsFmt),col('method_details','UPI_QR',upiQrFmt),col('status','Status',statusBadge),col('created_at','Requested',dt)] },
     rowActions:[
       {label:'Mark Completed', kind:'confirm', method:'POST', path:'/admin/withdrawals/:id/complete', idField:'id', body:[{name:'admin_note',label:'Transaction Reference / Note',required:true}], visibleWhen:row=>row.status==='pending'},
       {label:'Cancel', kind:'confirm', danger:true, method:'POST', path:'/admin/withdrawals/:id/cancel', idField:'id', body:[{name:'admin_note',label:'Reason',required:true}], visibleWhen:row=>row.status==='pending'},
     ],
     actions:[
       {label:'Search by TXN ID', method:'GET', path:'/admin/withdrawals/txn/:txn_no', fields:[{name:'txn_no',label:'Transaction Number (TXN ID)',required:true}], resultAsCard:true},
+      {label:'View Withdrawal Limits', method:'GET', path:'/payments/settings', fields:[], resultAsCard:true},
+      {label:'Set / Change Withdrawal Limits', method:'PATCH', path:'/admin/payments/settings', fields:[
+        {name:'min_withdrawal_amount', label:'Min Withdrawal Amount', type:'number'},
+        {name:'max_withdrawal_amount', label:'Max Withdrawal Amount', type:'number'},
+      ]},
     ]
   },
 
@@ -1088,7 +1142,10 @@ function deleteTournamentConfirm(tournamentId){
 async function loadTournamentsList(){
   const body = document.getElementById('mt-body');
   body.innerHTML = `<div class="glass pane"><div class="loadingRow"><span class="spinner"></span> Loading…</div></div>`;
-  const query = {page:1, page_size:50};
+  // sort_by/sort_order: without this the list comes back in created_at
+  // (batch-generation) order, so slots show shuffled instead of by their
+  // actual scheduled time (e.g. a 10:00 slot below an 8:00 PM one).
+  const query = {page:1, page_size:50, sort_by:'starts_at', sort_order:'asc'};
   if(mtStatusFilter) query.status = mtStatusFilter;
   const r = await apiCall('GET', `/tournaments`, {query});
   if(!r.ok){
@@ -1105,6 +1162,7 @@ async function loadTournamentsList(){
       <td class="cellMuted">#${m.short_id ?? ''}<div class="cellMuted">${m.id}</div></td>
       <td>${m.title}<div class="cellMuted">${m.tournament_uid||''}</div></td>
       <td>${statusBadge(m.status)}</td>
+      <td>${dt(m.starts_at)}</td>
       <td>${m.organizer||'—'}${m.organizer && m.organizer!=='ClassyBattle' ? ' <span class="badge info" style="font-size:10px;">User-hosted</span>' : ''}</td>
       <td>${money(m.entry_fee)} / ${money(m.prize_pool)}</td>
       <td>${m.current_players}/${m.max_players}</td>
@@ -1119,13 +1177,13 @@ async function loadTournamentsList(){
         </div>
       </td>
     </tr>
-    <tr id="mt-results-row-${m.id}" style="display:none;"><td colspan="7"><div id="mt-results-${m.id}"></div></td></tr>
+    <tr id="mt-results-row-${m.id}" style="display:none;"><td colspan="8"><div id="mt-results-${m.id}"></div></td></tr>
   `).join('');
   body.innerHTML = `
     <div class="glass pane">
       <div class="sectionHead"><div><h3>Tournaments</h3></div></div>
       <div class="tableWrap"><table class="dataTable"><thead><tr>
-        <th>ID</th><th>Title</th><th>Status</th><th>Organizer</th><th>Entry / Prize</th><th>Players</th><th>Actions</th>
+        <th>ID</th><th>Title</th><th>Status</th><th>Starts</th><th>Organizer</th><th>Entry / Prize</th><th>Players</th><th>Actions</th>
       </tr></thead><tbody>${rows}</tbody></table></div>
     </div>
   `;
@@ -1600,7 +1658,31 @@ function renderModule(mod){
   if(mod.extraLists){
     mod.extraLists.forEach((el,i)=>{ html += `<div class="glass pane" id="listPane-extra${i}"></div>`; });
   }
-  if(mod.lookupOnly && mod.key !== 'teams' && mod.key !== 'results'){
+  if(mod.key === 'appversion'){
+    html += `<div class="glass pane">
+      <div class="sectionHead"><div><h3>Current Config</h3><div class="desc">Live settings, loaded automatically — no tap needed</div></div>
+        <button class="btn btn-ghost btn-sm" onclick="loadAutoVersionConfig()">Refresh</button>
+      </div>
+      <div class="grid grid-2" id="autoVersionBody">
+        ${['android','ios'].map(p=>`<div class="glass" style="padding:16px;"><div class="hint" style="font-weight:700;text-transform:capitalize;">${p}</div><div id="autoVersion-${p}" style="margin-top:8px;"><div class="loadingRow"><span class="spinner"></span> Loading…</div></div></div>`).join('')}
+      </div>
+    </div>`;
+  } else if(mod.key === 'payments'){
+    html += `<div class="glass pane">
+      <div class="sectionHead"><div><h3>Current QR / Payment Settings</h3><div class="desc">Live settings, loaded automatically — no tap needed</div></div>
+        <button class="btn btn-ghost btn-sm" onclick="loadAutoPaymentsSettings()">Refresh</button>
+      </div>
+      <div id="autoPaymentsBody"><div class="loadingRow"><span class="spinner"></span> Loading…</div></div>
+    </div>`;
+  } else if(mod.key === 'withdrawals'){
+    html += `<div class="glass pane">
+      <div class="sectionHead"><div><h3>Current Withdrawal Limits</h3><div class="desc">Min / max withdrawal amount, loaded automatically — no tap needed</div></div>
+        <button class="btn btn-ghost btn-sm" onclick="loadAutoWithdrawalLimits()">Refresh</button>
+      </div>
+      <div id="autoWithdrawalLimitsBody"><div class="loadingRow"><span class="spinner"></span> Loading…</div></div>
+    </div>`;
+  }
+  if(mod.lookupOnly && mod.key !== 'teams' && mod.key !== 'results' && mod.key !== 'appversion'){
     html += `<div class="glass pane"><div class="empty">Use the actions above — search by ID to look up a specific record.</div></div>`;
   }
   if(mod.key === 'teams' || mod.key === 'results'){
@@ -1621,6 +1703,62 @@ function renderModule(mod){
   if(mod.list && !mod.list.hidden) renderTablePane('listPane-main', mod, mod.list, {rowActions:mod.rowActions||[], listKey:'main'});
   if(mod.extraLists) mod.extraLists.forEach((el,i)=>renderTablePane('listPane-extra'+i, mod, el, {title:el.label, rowActions:el.rowActions||[], listKey:'extra'+i}));
   if(mod.key === 'teams' || mod.key === 'results') loadTeamsByTournament();
+  if(mod.key === 'appversion') loadAutoVersionConfig();
+  if(mod.key === 'payments') loadAutoPaymentsSettings();
+  if(mod.key === 'withdrawals') loadAutoWithdrawalLimits();
+}
+
+/* ============================================================
+   AUTO-VIEW PANES — show current config with zero taps, used by
+   App Version and QR/Payment Settings sections.
+============================================================ */
+function renderKVInto(elId, data){
+  const el = document.getElementById(elId);
+  if(!el) return;
+  const d = (data && (data.data || data)) || {};
+  const entries = Object.entries(d).filter(([k,v])=>typeof v!=='object' || v===null);
+  if(!entries.length){ el.innerHTML = `<div class="empty">No config found.</div>`; return; }
+  el.innerHTML = `<dl class="kvGrid">${entries.map(([k,v])=>`<dt>${k}</dt><dd>${v==null?'—':String(v)}</dd>`).join('')}</dl>`;
+}
+
+async function loadAutoVersionConfig(){
+  ['android','ios'].forEach(async (p)=>{
+    const elId = 'autoVersion-'+p;
+    const el = document.getElementById(elId);
+    if(el) el.innerHTML = `<div class="loadingRow"><span class="spinner"></span> Loading…</div>`;
+    const r = await apiCall('GET', `/app/version/${p}`);
+    if(!document.getElementById(elId)) return; // navigated away
+    if(r.ok){ renderKVInto(elId, r.data); }
+    else { document.getElementById(elId).innerHTML = `<div class="banner err">${friendlyError(r.data, r.status)}</div>`; }
+  });
+}
+
+async function loadAutoPaymentsSettings(){
+  const elId = 'autoPaymentsBody';
+  const el = document.getElementById(elId);
+  if(el) el.innerHTML = `<div class="loadingRow"><span class="spinner"></span> Loading…</div>`;
+  const r = await apiCall('GET', '/payments/settings');
+  if(!document.getElementById(elId)) return; // navigated away
+  if(r.ok){ renderKVInto(elId, r.data); }
+  else { document.getElementById(elId).innerHTML = `<div class="banner err">${friendlyError(r.data, r.status)}</div>`; }
+}
+
+async function loadAutoWithdrawalLimits(){
+  const elId = 'autoWithdrawalLimitsBody';
+  const el = document.getElementById(elId);
+  if(el) el.innerHTML = `<div class="loadingRow"><span class="spinner"></span> Loading…</div>`;
+  const r = await apiCall('GET', '/payments/settings');
+  if(!document.getElementById(elId)) return; // navigated away
+  if(r.ok){
+    const d = r.data.data || r.data || {};
+    const picked = {
+      min_withdrawal_amount: d.min_withdrawal_amount,
+      max_withdrawal_amount: d.max_withdrawal_amount,
+    };
+    renderKVInto(elId, picked);
+  } else {
+    document.getElementById(elId).innerHTML = `<div class="banner err">${friendlyError(r.data, r.status)}</div>`;
+  }
 }
 
 function extractItems(data){
@@ -1673,6 +1811,15 @@ async function loadTablePaneData(paneId, mod, listCfg, opts={}){
     return;
   }
   const items = extractItems(r.data);
+  if(listCfg.defaultSort){
+    const {key: sortKey, dir} = listCfg.defaultSort;
+    items.sort((a,b)=>{
+      const av = a[sortKey], bv = b[sortKey];
+      const at = av ? new Date(av).getTime() : 0;
+      const bt = bv ? new Date(bv).getTime() : 0;
+      return dir==='desc' ? (bt-at) : (at-bt);
+    });
+  }
   if(!items.length){
     body.innerHTML = `<div class="empty">No records found.</div>`;
     if(pager) pager.innerHTML = '';
@@ -1682,10 +1829,10 @@ async function loadTablePaneData(paneId, mod, listCfg, opts={}){
   const rowActions = opts.rowActions || [];
   let tableHtml = `<div class="tableWrap"><table class="dataTable"><thead><tr>${cols.map(c=>`<th>${c.label}</th>`).join('')}${rowActions.length?'<th>Actions</th>':''}</tr></thead><tbody>`;
   items.forEach(row=>{
-    tableHtml += '<tr>' + cols.map(c=>{
+    tableHtml += `<tr data-row-id="${escapeHtmlAdmin(String(extractId(row)))}">` + cols.map(c=>{
       let v = row[c.key];
       if(v==null) return '<td class="cellMuted">—</td>';
-      return `<td>${c.fmt ? c.fmt(v) : String(v)}</td>`;
+      return `<td>${c.fmt ? c.fmt(v, row) : String(v)}</td>`;
     }).join('');
     if(rowActions.length){
       tableHtml += `<td><div class="rowActions">${rowActions.filter(ra=>!ra.visibleWhen || ra.visibleWhen(row)).map((ra)=>{
@@ -1707,7 +1854,19 @@ async function loadTablePaneData(paneId, mod, listCfg, opts={}){
     `;
   }
 }
-function refreshPane(paneId, modKey){ goSection(State.section); }
+function refreshPane(paneId, modKey){ if(paneLoaders[paneId]) paneLoaders[paneId](); else goSection(State.section); }
+function refreshAllPanes(){
+  const keys = Object.keys(paneLoaders).filter(k=>document.getElementById(k+'-body'));
+  if(!keys.length){ goSection(State.section); return; }
+  keys.forEach(k=>paneLoaders[k]());
+}
+function removeRowById(id){
+  document.querySelectorAll(`tr[data-row-id="${CSS.escape(String(id))}"]`).forEach(tr=>{
+    tr.style.transition = 'opacity .3s ease';
+    tr.style.opacity = '0';
+    setTimeout(()=>tr.remove(), 300);
+  });
+}
 let searchTimers = {};
 function debouncedSearch(key){
   clearTimeout(searchTimers[key]);
@@ -1769,6 +1928,30 @@ function buildModal(title, desc, fields, onSubmit, submitLabel){
   document.getElementById('modalOverlay').classList.add('active');
 }
 function closeModal(){ document.getElementById('modalOverlay').classList.remove('active'); }
+
+function openUpiQrModal(upiId, payeeName, qrImgUrl){
+  const card = document.getElementById('modalCard');
+  card.className = 'modalCard glass';
+  card.innerHTML = `
+    <div class="mhead">
+      <div><h3>UPI QR — Scan to Pay</h3><div class="mdesc">Scan with any UPI app to pay this user directly</div></div>
+      <div class="closeX" onclick="closeModal()">✕</div>
+    </div>
+    <div id="modalBody" style="text-align:center;">
+      <img src="${qrImgUrl}" alt="UPI QR" style="width:260px;height:260px;border-radius:10px;border:1px solid var(--border,#333);background:#fff;padding:8px;">
+      <div style="margin-top:14px;">
+        <div class="hint" style="font-weight:700;">UPI ID</div>
+        <div style="font-size:15px;margin-top:4px;user-select:all;">${escapeHtmlAdmin(upiId)}</div>
+        ${payeeName ? `<div class="hint" style="margin-top:8px;">${escapeHtmlAdmin(payeeName)}</div>` : ''}
+      </div>
+      <div class="actionsBar" style="margin-top:18px;">
+        <button class="btn btn-ghost" style="width:auto;" onclick="navigator.clipboard.writeText('${upiId.replace(/'/g,"\\'")}');showToast('UPI ID copied.','ok');">Copy UPI ID</button>
+        <button class="btn btn-ghost" onclick="closeModal()">Close</button>
+      </div>
+    </div>
+  `;
+  document.getElementById('modalOverlay').classList.add('active');
+}
 
 /* ============================================================
    TOASTS — replaces browser alert() with proper themed toasts
@@ -2099,7 +2282,7 @@ async function loadProfileTab(){
     if(!r.ok){ pane.innerHTML = `<div class="banner err">${friendlyError(r.data, r.status)}</div>`; return; }
     const items = extractItems(r.data);
     pane.innerHTML = items.length ? `<div class="tableWrap"><table class="dataTable"><thead><tr><th>Short ID</th><th>Provider</th><th>Amount</th><th>UTR</th><th>Status</th><th>Submitted</th><th>Proof</th><th>Actions</th></tr></thead><tbody>
-      ${items.map(d=>`<tr>
+      ${items.map(d=>`<tr data-row-id="${escapeHtmlAdmin(String(d.id))}">
         <td>${d.short_id}</td><td>${d.provider||'—'}</td><td>${money(d.amount)}</td><td>${d.utr_number||'—'}</td><td>${statusBadge(d.status)}</td><td>${dt(d.submitted_at)}</td>
         <td>${d.screenshot_url?`<a href="${d.screenshot_url}" target="_blank" rel="noopener">View</a>`:'—'}</td>
         <td><div class="miniActions">${
@@ -2116,10 +2299,11 @@ async function loadProfileTab(){
   if(tab==='withdrawals'){
     const r = await apiCall('GET', '/admin/withdrawals', {query:{page:1, page_size:100}});
     if(!r.ok){ pane.innerHTML = `<div class="banner err">${friendlyError(r.data, r.status)}</div>`; return; }
-    const items = extractItems(r.data).filter(w => w.user_id===userId);
-    pane.innerHTML = items.length ? `<div class="tableWrap"><table class="dataTable"><thead><tr><th>Short ID</th><th>Amount</th><th>Method</th><th>Status</th><th>Requested</th><th>Actions</th></tr></thead><tbody>
-      ${items.map(w=>`<tr>
-        <td>${w.short_id}</td><td>${money(w.amount)}</td><td>${w.method_type||'—'}</td><td>${statusBadge(w.status)}</td><td>${dt(w.created_at)}</td>
+    const items = extractItems(r.data).filter(w => w.user_id===userId)
+      .sort((a,b)=> new Date(b.created_at||0).getTime() - new Date(a.created_at||0).getTime());
+    pane.innerHTML = items.length ? `<div class="tableWrap"><table class="dataTable"><thead><tr><th>Short ID</th><th>Amount</th><th>Method</th><th>UPI_QR</th><th>Status</th><th>Requested</th><th>Actions</th></tr></thead><tbody>
+      ${items.map(w=>`<tr data-row-id="${escapeHtmlAdmin(String(w.id))}">
+        <td>${w.short_id}</td><td>${money(w.amount)}</td><td>${w.method_type||'—'}</td><td>${upiQrFmt(w.method_details, w)}</td><td>${statusBadge(w.status)}</td><td>${dt(w.created_at)}</td>
         <td><div class="miniActions">${
           String(w.status).toLowerCase()==='pending' ? `
             <button class="btn btn-sm btn-primary" onclick="profileCompleteWithdrawal('${w.id}')">Complete</button>
@@ -2236,7 +2420,7 @@ async function profileApproveDeposit(depositId){
       await voiceDone;
       if(!r.ok) return {ok:false, error: friendlyError(r.data, r.status)};
       playVoice('completed');
-      showToast('Deposit approved.', 'ok'); loadProfileTab();
+      showToast('Deposit approved.', 'ok'); removeRowById(depositId);
     },
   });
 }
@@ -2253,7 +2437,7 @@ async function profileRejectDeposit(depositId){
     onConfirm: async (out)=>{
       const r = await apiCall('POST', `/admin/payments/deposits/${encodeURIComponent(depositId)}/reject`, {body:{reason: out.reason, note: out.note||null}});
       if(!r.ok) return {ok:false, error: friendlyError(r.data, r.status)};
-      showToast('Deposit rejected.', 'ok'); loadProfileTab();
+      showToast('Deposit rejected.', 'ok'); removeRowById(depositId);
     },
   });
 }
@@ -2270,7 +2454,7 @@ async function profileCompleteWithdrawal(withdrawalId){
       await voiceDone;
       if(!r.ok) return {ok:false, error: friendlyError(r.data, r.status)};
       playVoice('completed');
-      showToast('Withdrawal completed.', 'ok'); loadProfileTab();
+      showToast('Withdrawal completed.', 'ok'); removeRowById(withdrawalId);
     },
   });
 }
@@ -2288,7 +2472,7 @@ async function profileCancelWithdrawal(withdrawalId){
       await voiceDone;
       if(!r.ok) return {ok:false, error: friendlyError(r.data, r.status)};
       playVoice('completed');
-      showToast('Withdrawal cancelled.', 'ok'); loadProfileTab();
+      showToast('Withdrawal cancelled.', 'ok'); removeRowById(withdrawalId);
     },
   });
 }
@@ -2332,7 +2516,7 @@ async function openCreateBannerModal(){
     document.getElementById('modalSubmitBtn').disabled = false;
     if(r.ok){
       document.getElementById('modalMsg').innerHTML = `<div class="banner ok">Done — banner added.</div>`;
-      setTimeout(()=>{ closeModal(); goSection(State.section); }, 900);
+      setTimeout(()=>{ closeModal(); refreshAllPanes(); }, 900);
     } else {
       document.getElementById('modalMsg').innerHTML = `<div class="banner err">${friendlyError(r.data, r.status)}</div>`;
     }
@@ -2367,7 +2551,7 @@ async function openReplaceBannerImageModal(id){
     document.getElementById('modalSubmitBtn').disabled = false;
     if(r.ok){
       document.getElementById('modalMsg').innerHTML = `<div class="banner ok">Done — image replaced.</div>`;
-      setTimeout(()=>{ closeModal(); goSection(State.section); }, 900);
+      setTimeout(()=>{ closeModal(); refreshAllPanes(); }, 900);
     } else {
       document.getElementById('modalMsg').innerHTML = `<div class="banner err">${friendlyError(r.data, r.status)}</div>`;
     }
@@ -2420,7 +2604,7 @@ async function openBroadcastModal(){
     document.getElementById('modalSubmitBtn').disabled = false;
     if(r.ok){
       document.getElementById('modalMsg').innerHTML = `<div class="banner ok">Done — request completed successfully.</div>`;
-      setTimeout(()=>{ closeModal(); goSection(State.section); }, 900);
+      setTimeout(()=>{ closeModal(); refreshAllPanes(); }, 900);
     } else {
       document.getElementById('modalMsg').innerHTML = `<div class="banner err">${friendlyError(r.data, r.status)}</div>`;
     }
@@ -2484,7 +2668,7 @@ async function openCreateScheduleModal(){
     document.getElementById('modalSubmitBtn').disabled = false;
     if(r.ok){
       document.getElementById('modalMsg').innerHTML = `<div class="banner ok">Done — ${body.daily_slot_times.length} matches/day scheduled.</div>`;
-      setTimeout(()=>{ closeModal(); goSection(State.section); }, 900);
+      setTimeout(()=>{ closeModal(); refreshAllPanes(); }, 900);
     } else {
       document.getElementById('modalMsg').innerHTML = `<div class="banner err">${friendlyError(r.data, r.status)}</div>`;
     }
@@ -2544,7 +2728,7 @@ async function openEditScheduleModal(id){
     document.getElementById('modalSubmitBtn').disabled = false;
     if(r.ok){
       document.getElementById('modalMsg').innerHTML = `<div class="banner ok">Done — record updated.</div>`;
-      setTimeout(()=>{ closeModal(); goSection(State.section); }, 900);
+      setTimeout(()=>{ closeModal(); refreshAllPanes(); }, 900);
     } else {
       document.getElementById('modalMsg').innerHTML = `<div class="banner err">${friendlyError(r.data, r.status)}</div>`;
     }
@@ -2580,7 +2764,7 @@ function openActionModal(modKey, idx){
       document.getElementById('modalMsg').innerHTML = `<div class="banner ok">Done — request completed successfully.</div>`;
       if(a.resultAsCard){ renderResultCard(r.data); }
       else if(a.resultAsTable){ renderResultTable(r.data, a.columns); }
-      else { setTimeout(()=>{ closeModal(); goSection(State.section); }, 900); }
+      else { setTimeout(()=>{ closeModal(); refreshAllPanes(); }, 900); }
     } else {
       document.getElementById('modalMsg').innerHTML = `<div class="banner err">${friendlyError(r.data, r.status)}</div>`;
     }
@@ -2609,7 +2793,7 @@ function openRowActionModal(modKey, listKey, raIdx, id){
     document.getElementById('modalSubmitBtn').disabled = false;
     if(r.ok){
       document.getElementById('modalMsg').innerHTML = `<div class="banner ok">Done — record updated.</div>`;
-      setTimeout(()=>{ closeModal(); goSection(State.section); }, 900);
+      setTimeout(()=>{ closeModal(); removeRowById(id); }, 900);
     } else {
       document.getElementById('modalMsg').innerHTML = `<div class="banner err">${friendlyError(r.data, r.status)}</div>`;
     }
@@ -2634,7 +2818,7 @@ function renderResultTable(data, columns){
     html += '<tr>' + columns.map(c=>{
       let v = row[c.key];
       if(v==null) return '<td class="cellMuted">—</td>';
-      return `<td>${c.fmt ? c.fmt(v) : String(v)}</td>`;
+      return `<td>${c.fmt ? c.fmt(v, row) : String(v)}</td>`;
     }).join('') + '</tr>';
   });
   html += '</tbody></table></div>';
