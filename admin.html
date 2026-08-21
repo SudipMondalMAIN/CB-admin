@@ -905,7 +905,7 @@ const MODULES = [
   },
 
   { key:'payments', label:'Deposits', icon:'▤', group:'Finance', desc:'Deposit requests from users',
-    list:{ path:'/admin/payments/deposits', query:['status'], columns:[col('txn_no','TXN ID'),col('id','ID'),col('user_id','User'),col('amount','Amount',money),col('status','Status',statusBadge),col('created_at','Requested',dt)] },
+    list:{ path:'/admin/payments/deposits', query:['status'], defaultSort:{key:'created_at', dir:'desc'}, columns:[col('txn_no','TXN ID'),col('id','ID'),col('user_id','User'),col('amount','Amount',money),col('screenshot_url','Proof',proofLinkFmt),col('status','Status',statusBadge),col('created_at','Requested',dt)] },
     rowActions:[
       {label:'Approve', kind:'confirm', method:'POST', path:'/admin/payments/deposits/:id/approve', idField:'id', body:[{name:'admin_note',label:'Note'}], visibleWhen:row=>['pending','on_hold'].includes(row.status)},
       {label:'Decline', kind:'confirm', danger:true, method:'POST', path:'/admin/payments/deposits/:id/reject', idField:'id', body:[{name:'reason',label:'Reason',type:'select',options:['invalid_utr','wrong_amount','fake_screenshot','duplicate_utr','other'],required:true},{name:'note',label:'Note'}], visibleWhen:row=>['pending','on_hold'].includes(row.status)},
@@ -1944,6 +1944,15 @@ async function loadTablePaneData(paneId, mod, listCfg, opts={}){
 
   const query = {page: st.page, page_size: 15};
   if(st.search) query.search = st.search;
+  // Ask the server to sort too — without this, defaultSort below only
+  // re-orders whatever 15 rows happen to land on the current page, and
+  // the actual latest record (e.g. newest withdrawal) can be sitting
+  // unsorted on page 2+ because the server's own default order isn't
+  // newest-first. See tournaments loader for the same fix.
+  if(listCfg.defaultSort){
+    query.sort_by = listCfg.defaultSort.key;
+    query.sort_order = listCfg.defaultSort.dir;
+  }
 
   const r = await apiCall('GET', listCfg.path, {query});
   if(document.getElementById(key+'-body') !== body) return; // pane replaced meanwhile
@@ -2712,7 +2721,7 @@ async function openBroadcastModal(){
           <option value="both">Both (In-App + Push and Email)</option>
         </select>
       </div>
-      <div class="field"><label>Target User IDs (optional, comma-separated — leave empty for all users)</label><input id="mf-target_user_ids" type="text" placeholder="e.g. uuid1, uuid2"></div>
+      <div class="field"><label>Target User IDs or Player UIDs (optional, comma-separated — leave empty for all users)</label><input id="mf-target_user_ids" type="text" placeholder="e.g. AB12CD34, uuid2"></div>
     </div>
     <div id="modalMsg"></div>
     <div class="actionsBar">
@@ -2737,7 +2746,25 @@ async function openBroadcastModal(){
       send_email: (channel==='email' || channel==='both'),
     };
     if(targetRaw){
-      payload.target_user_ids = targetRaw.split(',').map(s=>s.trim()).filter(Boolean);
+      const rawIds = targetRaw.split(',').map(s=>s.trim()).filter(Boolean);
+      // Each entry may be a full user UUID or a short player UID (e.g.
+      // "AB12CD34") — resolve any non-UUID entries via the same lookup
+      // used elsewhere (resolveUidField), so admins can paste player UIDs
+      // straight from a player's profile instead of hunting for the UUID.
+      document.getElementById('modalMsg').innerHTML = `<div class="loadingRow"><span class="spinner"></span> Resolving target user(s)…</div>`;
+      const resolvedIds = [];
+      const unresolved = [];
+      for(const rawId of rawIds){
+        if(looksLikeUuid(rawId)){ resolvedIds.push(rawId); continue; }
+        const resolved = await resolveUidField(rawId);
+        if(resolved) resolvedIds.push(resolved);
+        else unresolved.push(rawId);
+      }
+      if(unresolved.length){
+        document.getElementById('modalMsg').innerHTML = `<div class="banner err">Couldn't find a user for UID(s): ${unresolved.join(', ')} — check the UID or use the full User ID.</div>`;
+        return;
+      }
+      payload.target_user_ids = resolvedIds;
     }
     document.getElementById('modalSubmitBtn').disabled = true;
     document.getElementById('modalMsg').innerHTML = `<div class="loadingRow"><span class="spinner"></span> Working…</div>`;
