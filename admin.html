@@ -785,6 +785,7 @@ const MODULES = [
     rowActions:[
       {label:'Edit Schedule', custom:'openEditScheduleModal'},
       {label:"Generate Today's Slots Now", kind:'confirm', method:'POST', path:'/schedules/:id/generate-slots', idField:'id', body:[]},
+      {label:'Delete Schedule', kind:'confirm', danger:true, method:'DELETE', path:'/schedules/:id', idField:'id', body:[]},
     ]
   },
 
@@ -2878,8 +2879,8 @@ async function openCreateScheduleModal(){
   document.getElementById('modalBody').innerHTML = `
     <div class="formGrid">
       <div class="field"><label>Game *</label><select id="mf-game_id"><option>Loading games…</option></select></div>
-      <div class="field"><label>Category</label><select id="mf-category"><option value="solo">solo</option><option value="squad">squad</option></select></div>
-      <div class="field"><label>Squad Size (2=Duo, 3+=Squad — only used when Category=squad)</label><input id="mf-squad_size" type="number" placeholder="e.g. 2 for Duo, 4 for Squad"></div>
+      <div class="field"><label>Category</label><select id="mf-category"><option value="solo">solo</option><option value="duo">duo</option><option value="squad">squad</option></select></div>
+      <div class="field"><label>Squad Size (only used when Category=squad; Duo is always fixed at 2)</label><input id="mf-squad_size" type="number" placeholder="e.g. 4 for Squad"></div>
       <div class="field"><label>Entry Fee (0 = shows under "Free" filter)</label><input id="mf-entry_fee" type="number"></div>
       <div class="field"><label>Prize Pool</label><input id="mf-prize_pool" type="number"></div>
       <div class="field"><label>Max Players per Slot *</label><input id="mf-max_players_per_slot" type="number"></div>
@@ -2957,7 +2958,7 @@ async function openEditScheduleModal(id){
       <div class="field"><label>Entry Fee</label><input id="mf-entry_fee" type="number" value="${s.entry_fee??''}"></div>
       <div class="field"><label>Prize Pool</label><input id="mf-prize_pool" type="number" value="${s.prize_pool??''}"></div>
       <div class="field"><label>Max Players per Slot</label><input id="mf-max_players" type="number" value="${s.max_players??''}"></div>
-      <div class="field"><label>Squad Size (2=Duo, 3+=Squad)</label><input id="mf-squad_size" type="number" value="${s.squad_size??''}"></div>
+      <div class="field"><label>Squad Size (ignored for Solo/Duo; Duo is always fixed at 2)</label><input id="mf-squad_size" type="number" value="${s.squad_size??''}"></div>
       <div class="field"><label>Banner Image URL</label><input id="mf-banner_url" type="text" placeholder="https://…" value="${s.banner_url??''}"></div>
       <div class="field"><label>Cover Image URL</label><input id="mf-cover_url" type="text" placeholder="https://…" value="${s.cover_url??''}"></div>
       <div class="field"><label>First Match Time</label><input id="mf-first_time" type="time" value="${times[0]||''}"></div>
