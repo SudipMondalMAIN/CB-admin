@@ -745,14 +745,14 @@ const MODULES = [
     ]
   },
 
-  { key:'homeboxes', label:'Home Category Boxes', icon:'▦', group:'Catalog', desc:'Home-screen category boxes (Solo / Squad / Custom) linking to a game',
+  { key:'homeboxes', label:'Home Category Boxes', icon:'▦', group:'Catalog', desc:'Home-screen category boxes (Solo / Duo / Squad / Free / Custom) linking to a game',
     list:{ path:'/home-boxes/admin', columns:[
       col('id','ID'), col('box_type','Type',statusBadge), col('game_id','Game ID'), col('title','Title'),
       col('banner_url','Banner', v=>v?`<img src="${v}" style="width:70px;height:40px;object-fit:cover;border-radius:6px;">`:'—'),
       col('sort_order','Sort Order'), col('is_active','Active',statusBadge),
     ]},
     actions:[{label:'Add Home Box', method:'POST', path:'/home-boxes/admin', fields:[
-      {name:'box_type',label:'Box Type',type:'select',options:['solo','squad','custom'],required:true},
+      {name:'box_type',label:'Box Type',type:'select',options:['solo','duo','squad','free','custom'],required:true},
       {name:'game_id',label:'Game (required unless Custom)',type:'game-select'},
       {name:'banner_url',label:'Banner URL',required:true},
       {name:'title',label:'Title'},
@@ -761,7 +761,7 @@ const MODULES = [
     ]}],
     rowActions:[
       {label:'Edit Home Box', kind:'confirm', method:'PATCH', path:'/home-boxes/admin/:id', idField:'id', body:[
-        {name:'box_type',label:'Box Type',type:'select',options:['solo','squad','custom']},
+        {name:'box_type',label:'Box Type',type:'select',options:['solo','duo','squad','free','custom']},
         {name:'game_id',label:'Game',type:'game-select'}, {name:'banner_url',label:'Banner URL'}, {name:'title',label:'Title'},
         {name:'sort_order',label:'Sort Order',type:'number'},
         {name:'is_active',label:'Active',type:'select',options:['true','false']},
@@ -775,6 +775,7 @@ const MODULES = [
       col('id','Schedule ID'), col('game_id','Game ID'), col('category','Category',statusBadge),
       col('daily_slot_times','Times/Day', v=>Array.isArray(v)?`${v.length} slots/day`:'—'),
       col('entry_fee','Entry Fee',money), col('prize_pool','Prize Pool',money),
+      col('prize_type','Prize Type',statusBadge),
       col('max_players','Max/Slot'), col('last_generated_on','Last Generated',dt),
     ]},
     actions:[
@@ -1099,9 +1100,13 @@ function openCreateTournamentModal(){
     {name:'starts_at', label:'Starts At (IST)', type:'datetime-local'},
     {name:'entry_fee', label:'Entry Fee', type:'number'},
     {name:'prize_pool', label:'Prize Pool', type:'number'},
+    {name:'prize_type', label:'Prize Type', type:'select', options:['rank','per_kill','win']},
+    {name:'rank_prize_rules', label:'Rank Prizes (JSON — used when Prize Type=rank)', type:'json', placeholder:'[{"rank":1,"amount":500},{"rank":2,"amount":300}]'},
+    {name:'per_kill_amount', label:'₹ per Kill (used when Prize Type=per_kill)', type:'number'},
+    {name:'win_amount', label:'₹ for Win (used when Prize Type=win)', type:'number'},
     {name:'max_players', label:'Max Players', type:'number', required:true},
     {name:'registration_mode', label:'Registration Mode', type:'select', options:['solo','team_invite','auto_random']},
-    {name:'team_size', label:'Team Size', type:'number'},
+    {name:'team_size', label:'Team Size (1=Solo, 2=Duo, 3+=Squad)', type:'number'},
     {name:'visibility', label:'Visibility', type:'select', options:['public','private','unlisted']},
     {name:'banner_url', label:'Banner Image URL', placeholder:'https://…'},
     {name:'cover_url', label:'Cover Image URL', placeholder:'https://…'},
@@ -1144,6 +1149,10 @@ async function openEditTournamentModal(tournamentId){
     {name:'map_id', label:'Map ID', value:t.map_id},
     {name:'entry_fee', label:'Entry Fee', type:'number', value:t.entry_fee},
     {name:'prize_pool', label:'Prize Pool', type:'number', value:t.prize_pool},
+    {name:'prize_type', label:'Prize Type', type:'select', options:['rank','per_kill','win'], value:t.prize_type},
+    {name:'rank_prize_rules', label:'Rank Prizes (JSON — used when Prize Type=rank)', type:'json', placeholder:'[{"rank":1,"amount":500},{"rank":2,"amount":300}]', value:t.rank_prize_rules?JSON.stringify(t.rank_prize_rules):''},
+    {name:'per_kill_amount', label:'₹ per Kill (used when Prize Type=per_kill)', type:'number', value:t.per_kill_amount},
+    {name:'win_amount', label:'₹ for Win (used when Prize Type=win)', type:'number', value:t.win_amount},
     {name:'max_players', label:'Max Players', type:'number', required:true, value:t.max_players},
     {name:'max_teams', label:'Max Teams', type:'number', value:t.max_teams},
     {name:'visibility', label:'Visibility', type:'select', options:['public','private','unlisted'], value:t.visibility},
@@ -2266,6 +2275,64 @@ function generateSlotTimes(firstTime, lastTime, intervalMin){
   return times;
 }
 
+/* Prize type config (Rank / Per Kill / Win) shared by the Create and
+   Edit Schedule modals, and by the per-tournament edit modal. `s` is
+   the existing schedule/tournament record when editing ({} when
+   creating). Renders the amount field(s) matching whichever
+   prize_type is currently selected in #mf-prize_type. */
+function rankPrizeRulesToText(rules){
+  if(!Array.isArray(rules) || !rules.length) return '';
+  return rules.map(r=>`${r.rank}:${r.amount}`).join(', ');
+}
+function parseRankPrizeRulesText(text){
+  const parts = String(text||'').split(',').map(s=>s.trim()).filter(Boolean);
+  const rules = [];
+  for(const p of parts){
+    const m = p.match(/^(\d+)\s*:\s*([\d.]+)$/);
+    if(!m) throw new Error(`Invalid rank prize entry "${p}" — use "rank:amount", e.g. "1:500, 2:300, 3:200"`);
+    rules.push({rank: Number(m[1]), amount: Number(m[2])});
+  }
+  if(!rules.length) throw new Error('Add at least one rank prize, e.g. "1:500, 2:300, 3:200"');
+  return rules;
+}
+function prizeFieldsHtml(type, s){
+  s = s || {};
+  if(type === 'per_kill'){
+    return `<div class="field"><label>₹ per Kill *</label><input id="mf-per_kill_amount" type="number" step="0.01" placeholder="e.g. 10" value="${s.per_kill_amount??''}"></div>`;
+  }
+  if(type === 'win'){
+    return `<div class="field"><label>₹ for Win *</label><input id="mf-win_amount" type="number" step="0.01" placeholder="e.g. 500" value="${s.win_amount??''}"></div>`;
+  }
+  return `<div class="field" style="grid-column:1/-1;"><label>Rank Prizes * (format "rank:amount", comma-separated)</label><input id="mf-rank_prize_rules" type="text" placeholder="e.g. 1:500, 2:300, 3:200" value="${rankPrizeRulesToText(s.rank_prize_rules)}"></div>`;
+}
+function bindPrizeTypeSelect(containerId, selectId, s){
+  const render = ()=>{
+    document.getElementById(containerId).innerHTML = prizeFieldsHtml(document.getElementById(selectId).value, s);
+  };
+  document.getElementById(selectId).onchange = render;
+  render();
+}
+/* Reads whichever prize fields are currently visible and returns the
+   {prize_type, rank_prize_rules?, per_kill_amount?, win_amount?} slice
+   to merge into a request body. Throws on invalid rank-prize text so
+   callers can surface the message in modalMsg. */
+function collectPrizeFields(selectId){
+  const prize_type = document.getElementById(selectId).value;
+  if(prize_type === 'per_kill'){
+    const v = document.getElementById('mf-per_kill_amount').value;
+    if(v==='') throw new Error('Please fill: ₹ per Kill');
+    return {prize_type, per_kill_amount: Number(v)};
+  }
+  if(prize_type === 'win'){
+    const v = document.getElementById('mf-win_amount').value;
+    if(v==='') throw new Error('Please fill: ₹ for Win');
+    return {prize_type, win_amount: Number(v)};
+  }
+  const text = document.getElementById('mf-rank_prize_rules').value;
+  return {prize_type, rank_prize_rules: parseRankPrizeRulesText(text)};
+}
+
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function looksLikeUuid(v){ return UUID_RE.test(String(v||'').trim()); }
 /* Lets admin forms accept a player's short UID (e.g. "AB12CD34") in a
@@ -2812,8 +2879,8 @@ async function openCreateScheduleModal(){
     <div class="formGrid">
       <div class="field"><label>Game *</label><select id="mf-game_id"><option>Loading games…</option></select></div>
       <div class="field"><label>Category</label><select id="mf-category"><option value="solo">solo</option><option value="squad">squad</option></select></div>
-      <div class="field"><label>Squad Size (only for squad)</label><input id="mf-squad_size" type="number"></div>
-      <div class="field"><label>Entry Fee</label><input id="mf-entry_fee" type="number"></div>
+      <div class="field"><label>Squad Size (2=Duo, 3+=Squad — only used when Category=squad)</label><input id="mf-squad_size" type="number" placeholder="e.g. 2 for Duo, 4 for Squad"></div>
+      <div class="field"><label>Entry Fee (0 = shows under "Free" filter)</label><input id="mf-entry_fee" type="number"></div>
       <div class="field"><label>Prize Pool</label><input id="mf-prize_pool" type="number"></div>
       <div class="field"><label>Max Players per Slot *</label><input id="mf-max_players_per_slot" type="number"></div>
       <div class="field"><label>Banner Image URL</label><input id="mf-banner_url" type="text" placeholder="https://…"></div>
@@ -2821,6 +2888,8 @@ async function openCreateScheduleModal(){
       <div class="field"><label>First Match Time * (IST)</label><input id="mf-first_time" type="time"></div>
       <div class="field"><label>Last Match Time * (IST)</label><input id="mf-last_time" type="time"></div>
       <div class="field"><label>Every</label><select id="mf-interval"><option value="15">15 min</option><option value="20">20 min</option><option value="30" selected>30 min</option><option value="45">45 min</option><option value="60">60 min</option></select></div>
+      <div class="field"><label>Prize Type *</label><select id="mf-prize_type"><option value="rank">Rank-wise</option><option value="per_kill">Per Kill</option><option value="win">Win Only</option></select></div>
+      <div id="mf-prize-fields-container" style="grid-column:1/-1; display:contents;"></div>
     </div>
     <div class="hint" style="margin-top:8px;">One-time setup — after this, matches generate automatically every day, no need to repeat.</div>
     <div id="modalMsg"></div>
@@ -2831,6 +2900,7 @@ async function openCreateScheduleModal(){
     <div id="modalResult"></div>
   `;
   document.getElementById('mf-game_id').innerHTML = await fetchGameOptionsHtml();
+  bindPrizeTypeSelect('mf-prize-fields-container', 'mf-prize_type', {});
   document.getElementById('modalSubmitBtn').onclick = async ()=>{
     const game_id = document.getElementById('mf-game_id').value;
     const first_time = document.getElementById('mf-first_time').value;
@@ -2847,6 +2917,12 @@ async function openCreateScheduleModal(){
       max_players_per_slot: Number(document.getElementById('mf-max_players_per_slot').value || 0),
       daily_slot_times: generateSlotTimes(first_time, last_time, interval),
     };
+    try{
+      Object.assign(body, collectPrizeFields('mf-prize_type'));
+    }catch(e){
+      document.getElementById('modalMsg').innerHTML = `<div class="banner err">${e.message}</div>`;
+      return;
+    }
     const squadSize = document.getElementById('mf-squad_size').value;
     if(squadSize!=='') body.squad_size = Number(squadSize);
     const entryFee = document.getElementById('mf-entry_fee').value;
@@ -2881,13 +2957,15 @@ async function openEditScheduleModal(id){
       <div class="field"><label>Entry Fee</label><input id="mf-entry_fee" type="number" value="${s.entry_fee??''}"></div>
       <div class="field"><label>Prize Pool</label><input id="mf-prize_pool" type="number" value="${s.prize_pool??''}"></div>
       <div class="field"><label>Max Players per Slot</label><input id="mf-max_players" type="number" value="${s.max_players??''}"></div>
-      <div class="field"><label>Squad Size</label><input id="mf-squad_size" type="number" value="${s.squad_size??''}"></div>
+      <div class="field"><label>Squad Size (2=Duo, 3+=Squad)</label><input id="mf-squad_size" type="number" value="${s.squad_size??''}"></div>
       <div class="field"><label>Banner Image URL</label><input id="mf-banner_url" type="text" placeholder="https://…" value="${s.banner_url??''}"></div>
       <div class="field"><label>Cover Image URL</label><input id="mf-cover_url" type="text" placeholder="https://…" value="${s.cover_url??''}"></div>
       <div class="field"><label>First Match Time</label><input id="mf-first_time" type="time" value="${times[0]||''}"></div>
       <div class="field"><label>Last Match Time</label><input id="mf-last_time" type="time" value="${times[times.length-1]||''}"></div>
       <div class="field"><label>Every</label><select id="mf-interval"><option value="15">15 min</option><option value="20">20 min</option><option value="30" selected>30 min</option><option value="45">45 min</option><option value="60">60 min</option></select></div>
       <div class="field"><label>Active</label><select id="mf-is_active"><option value="true">true</option><option value="false">false</option></select></div>
+      <div class="field"><label>Prize Type</label><select id="mf-prize_type"><option value="rank">Rank-wise</option><option value="per_kill">Per Kill</option><option value="win">Win Only</option></select></div>
+      <div id="mf-prize-fields-container" style="grid-column:1/-1; display:contents;"></div>
     </div>
     <div class="hint" style="margin-top:8px;">Leave First/Last Match Time blank to keep the existing ${times.length} match times unchanged.</div>
     <div id="modalMsg"></div>
@@ -2897,8 +2975,16 @@ async function openEditScheduleModal(id){
     </div>
     <div id="modalResult"></div>
   `;
+  document.getElementById('mf-prize_type').value = s.prize_type || 'rank';
+  bindPrizeTypeSelect('mf-prize-fields-container', 'mf-prize_type', s);
   document.getElementById('modalSubmitBtn').onclick = async ()=>{
     const body = {};
+    try{
+      Object.assign(body, collectPrizeFields('mf-prize_type'));
+    }catch(e){
+      document.getElementById('modalMsg').innerHTML = `<div class="banner err">${e.message}</div>`;
+      return;
+    }
     const entryFee = document.getElementById('mf-entry_fee').value;
     if(entryFee!=='') body.entry_fee = Number(entryFee);
     const prizePool = document.getElementById('mf-prize_pool').value;
