@@ -508,12 +508,35 @@ function enterApp(){
 function col(key, label, fmt){ return {key, label, fmt}; }
 const money = v => v==null ? '—' : `₹${Number(v).toLocaleString('en-IN')}`;
 const dt = v => v ? new Date(v).toLocaleString('en-IN',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit',timeZone:'Asia/Kolkata'}) + ' IST' : '—';
+// Converts an ISO datetime string to the 'YYYY-MM-DDTHH:mm' value a
+// <input type="datetime-local"> expects, rendered in IST (matches the
+// '+05:30' offset collectFields() stamps back on when saving).
+function toDatetimeLocalIST(v){
+  if(!v) return '';
+  const d = new Date(v);
+  if(isNaN(d.getTime())) return '';
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone:'Asia/Kolkata', year:'numeric', month:'2-digit', day:'2-digit',
+    hour:'2-digit', minute:'2-digit', hour12:false,
+  }).formatToParts(d).reduce((acc,p)=>{ acc[p.type]=p.value; return acc; }, {});
+  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
+}
 const methodDetailsFmt = v => {
   if(!v || typeof v !== 'object') return '—';
   const parts = Object.entries(v).filter(([k,val])=>val!=null && val!=='').map(([k,val])=>`${k.replace(/_/g,' ')}: ${val}`);
   return parts.length ? parts.join('<br>') : '—';
 };
 const proofLinkFmt = v => v ? `<a href="${v}" target="_blank" rel="noopener">View Proof</a>` : '<span class="cellMuted">—</span>';
+// Actual visible thumbnail (not just a text link) so an admin can see
+// the screenshot at a glance while reviewing a claim. Click opens the
+// full-size image in a new tab. onerror swaps in a note instead of a
+// silently broken image icon, in case the stored URL isn't reachable
+// (e.g. bucket not public).
+const proofThumbFmt = v => v ? `
+  <a href="${v}" target="_blank" rel="noopener" style="display:inline-block;">
+    <img src="${v}" alt="Proof screenshot" style="width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--border,#333);display:block;"
+      onerror="this.outerHTML='<span class=&quot;cellMuted&quot;>Image unavailable</span>'">
+  </a>` : '<span class="cellMuted">No proof (loss claim)</span>';
 const upiQrFmt = (v, row) => {
   if(!v || typeof v !== 'object') return '<span class="cellMuted">—</span>';
   const status = String((row && row.status) || '').toLowerCase();
@@ -807,17 +830,8 @@ const MODULES = [
     customRender:true,
   },
 
-  { key:'customresults', label:'Custom Result Verification', icon:'🛈', group:'Operations', desc:'Review self-declared win/loss claims from 1v1 Custom Tournaments — approve or reject win proofs',
-    list:{ path:'/admin/custom-results/pending', columns:[
-      col('id','Claim ID'), col('tournament_title','Tournament'), col('claimant_name','Claimant'),
-      col('outcome','Claimed Outcome',statusBadge), col('proof_url','Proof',proofLinkFmt),
-      col('opponent_name','Opponent'), col('opponent_outcome','Opponent Outcome',statusBadge),
-      col('status','Status',statusBadge), col('submitted_at','Submitted',dt),
-    ] },
-    rowActions:[
-      {label:'Approve', kind:'confirm', method:'POST', path:'/admin/custom-results/:id/approve', idField:'id', body:[], visibleWhen:row=>row.status==='pending'},
-      {label:'Reject', kind:'confirm', danger:true, method:'POST', path:'/admin/custom-results/:id/reject', idField:'id', body:[{name:'reason',label:'Reason',required:true}], visibleWhen:row=>row.status==='pending'},
-    ],
+  { key:'customresults', label:'Custom Result Verification', icon:'🛈', group:'Operations', desc:'Review self-declared win/loss claims from 1v1 Custom Tournaments, grouped by tournament — approve or reject win proofs',
+    customRender:true,
   },
 
   { key:'prize', label:'Prizes & Payouts', icon:'♦', group:'Finance', desc:'Winners across completed tournaments — who won what rank, and who still needs to be paid',
@@ -979,6 +993,7 @@ function goSection(key){
   if(key==='dashboard') renderDashboard();
   else if(key==='matches') renderMatches();
   else if(key==='results') renderTournamentResults();
+  else if(key==='customresults') renderCustomResults();
   else if(key==='history') renderTournamentHistory();
   else if(key==='prize') renderPrizesPayouts();
   else renderModule(mod);
@@ -1053,7 +1068,8 @@ function openCreateTournamentModal(){
   const fields = [
     {name:'title', label:'Title', required:true},
     {name:'organizer', label:'Organizer', required:true},
-    {name:'game_id', label:'Game ID', required:true},
+    {name:'game_id', label:'Game', type:'game-select', required:true},
+    {name:'starts_at', label:'Starts At (IST)', type:'datetime-local'},
     {name:'entry_fee', label:'Entry Fee', type:'number'},
     {name:'prize_pool', label:'Prize Pool', type:'number'},
     {name:'max_players', label:'Max Players', type:'number', required:true},
@@ -1078,6 +1094,7 @@ function openCreateTournamentModal(){
       document.getElementById('modalMsg').innerHTML = `<div class="banner err">${friendlyError(r.data, r.status)}</div>`;
     }
   }, 'Create');
+  populateGameSelects(fields);
 }
 
 async function openEditTournamentModal(tournamentId){
@@ -1093,6 +1110,7 @@ async function openEditTournamentModal(tournamentId){
   const fields = [
     {name:'title', label:'Title', required:true, value:t.title},
     {name:'organizer', label:'Organizer', required:true, value:t.organizer},
+    {name:'starts_at', label:'Starts At (IST)', type:'datetime-local', value:toDatetimeLocalIST(t.starts_at)},
     {name:'description', label:'Description', type:'textarea', value:t.description},
     {name:'rules', label:'Rules', type:'textarea', value:t.rules},
     {name:'mode_id', label:'Mode ID', value:t.mode_id},
@@ -1356,6 +1374,129 @@ async function toggleTournamentResultRow(tournamentId){
   const r = await apiCall('GET', `/tournaments/${encodeURIComponent(tournamentId)}/admin/details`);
   if(!r.ok){ holder.innerHTML = `<div class="banner err">${friendlyError(r.data, r.status)}</div>`; return; }
   renderMatchResultsPanel(holder, r.data.data || r.data);
+}
+
+/* ============================================================
+   CUSTOM RESULT VERIFICATION — self-declared win/loss claims from
+   1v1 Custom Tournaments. The backend list is a flat queue of
+   pending claims; group them here by tournament so an admin
+   reviews one tournament's claim(s) at a time instead of hunting
+   through a mixed list. Expand a tournament to see each player's
+   claim (outcome, proof screenshot, opponent's counter-claim) and
+   approve/reject right there.
+============================================================ */
+async function renderCustomResults(){
+  const c = document.getElementById('content');
+  c.innerHTML = `
+    <div class="glass pane">
+      <div class="sectionHead"><div><h3>Custom Result Verification</h3><div class="desc">Pending win/loss claims, grouped by tournament — expand a tournament to review and approve/reject each claim</div></div></div>
+      <div class="tblToolbar">
+        <button class="btn btn-ghost btn-sm" onclick="loadCustomResultsList()">Refresh</button>
+      </div>
+    </div>
+    <div id="cr-body"></div>
+  `;
+  loadCustomResultsList();
+}
+
+async function loadCustomResultsList(){
+  const body = document.getElementById('cr-body');
+  body.innerHTML = `<div class="glass pane"><div class="loadingRow"><span class="spinner"></span> Loading…</div></div>`;
+  const r = await apiCall('GET', `/admin/custom-results/pending`, {query:{page:1, page_size:100}});
+  if(!r.ok){
+    body.innerHTML = `<div class="glass pane"><div class="banner err">${friendlyError(r.data, r.status)}</div></div>`;
+    return;
+  }
+  const claims = extractItems(r.data);
+  if(!claims.length){
+    body.innerHTML = `<div class="glass pane"><div class="empty">No pending claims — nothing needs review right now.</div></div>`;
+    return;
+  }
+
+  // Group claims by tournament so each tournament's claim(s) are
+  // reviewed together rather than scattered across a flat list.
+  const byTournament = new Map();
+  for(const claim of claims){
+    const key = claim.tournament_id;
+    if(!byTournament.has(key)) byTournament.set(key, {tournament_id: key, tournament_title: claim.tournament_title, claims: []});
+    byTournament.get(key).claims.push(claim);
+  }
+  window._crGroups = byTournament;
+
+  const rows = [...byTournament.values()].map(g=>`
+    <tr>
+      <td>${g.tournament_title||'—'}<div class="cellMuted">${g.tournament_id}</div></td>
+      <td>${g.claims.length} pending claim${g.claims.length===1?'':'s'}</td>
+      <td><button class="btn btn-primary btn-sm" onclick="toggleCustomResultGroup('${g.tournament_id}')">Review Claims</button></td>
+    </tr>
+    <tr id="cr-group-row-${g.tournament_id}" style="display:none;"><td colspan="3"><div id="cr-group-${g.tournament_id}"></div></td></tr>
+  `).join('');
+  body.innerHTML = `<div class="glass pane"><div class="tableWrap"><table class="dataTable"><thead><tr>
+    <th>Tournament</th><th>Pending</th><th>Actions</th>
+  </tr></thead><tbody>${rows}</tbody></table></div></div>`;
+}
+
+const openCrGroupIds = new Set();
+function toggleCustomResultGroup(tournamentId){
+  const row = document.getElementById('cr-group-row-'+tournamentId);
+  const isOpen = openCrGroupIds.has(tournamentId);
+  if(isOpen){ row.style.display='none'; openCrGroupIds.delete(tournamentId); return; }
+  openCrGroupIds.add(tournamentId);
+  row.style.display='';
+  renderCustomResultGroup(tournamentId);
+}
+
+function renderCustomResultGroup(tournamentId){
+  const holder = document.getElementById('cr-group-'+tournamentId);
+  const group = window._crGroups.get(tournamentId);
+  if(!group || !holder) return;
+  const claimRows = group.claims.map(claim=>`
+    <tr>
+      <td class="cellMuted">${claim.id}</td>
+      <td>${claim.claimant_name||'—'}</td>
+      <td>${statusBadge(claim.outcome)}</td>
+      <td>${proofThumbFmt(claim.proof_url)}</td>
+      <td>${claim.opponent_name||'—'}</td>
+      <td>${claim.opponent_outcome?statusBadge(claim.opponent_outcome):'<span class="cellMuted">—</span>'}</td>
+      <td>${dt(claim.submitted_at)}</td>
+      <td>
+        <button class="btn btn-primary btn-sm" onclick="approveCustomClaim('${claim.id}','${tournamentId}')">Approve</button>
+        <button class="btn btn-danger btn-sm" onclick="rejectCustomClaimConfirm('${claim.id}','${tournamentId}')">Reject</button>
+      </td>
+    </tr>
+  `).join('');
+  holder.innerHTML = `<div class="tableWrap"><table class="dataTable"><thead><tr>
+    <th>Claim ID</th><th>Claimant</th><th>Claimed Outcome</th><th>Proof</th><th>Opponent</th><th>Opponent Outcome</th><th>Submitted</th><th>Actions</th>
+  </tr></thead><tbody>${claimRows}</tbody></table></div>`;
+}
+
+async function approveCustomClaim(claimId, tournamentId){
+  showPrompt({
+    title: 'Approve this win claim?',
+    desc: 'The claimant is confirmed as the winner and the prize is paid out.',
+    confirmLabel: 'Approve',
+    fields: [],
+    onConfirm: async ()=>{
+      const r = await apiCall('POST', `/admin/custom-results/${claimId}/approve`);
+      if(r.ok){ loadCustomResultsList(); return {ok:true}; }
+      return {ok:false, error: friendlyError(r.data, r.status)};
+    }
+  });
+}
+
+function rejectCustomClaimConfirm(claimId, tournamentId){
+  showPrompt({
+    title: 'Reject this claim?',
+    desc: 'The claimant will be told why. This cannot be undone.',
+    danger: true,
+    confirmLabel: 'Reject',
+    fields: [{name:'reason', label:'Reason', required:true}],
+    onConfirm: async (out)=>{
+      const r = await apiCall('POST', `/admin/custom-results/${claimId}/reject`, {body:{reason: out.reason}});
+      if(r.ok){ loadCustomResultsList(); return {ok:true}; }
+      return {ok:false, error: friendlyError(r.data, r.status)};
+    }
+  });
 }
 
 /* ============================================================
